@@ -2,6 +2,13 @@ export const NOTE_NAMES_EN = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', '
 export const NOTE_NAMES_JP = ['ド', 'ド♯', 'レ', 'レ♯', 'ミ', 'ファ', 'ファ♯', 'ソ', 'ソ♯', 'ラ', 'ラ♯', 'シ']
 export const NOTE_NAMES_FLAT_EN = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B']
 
+// One distinct color per chromatic note (C..B)
+export const NOTE_COLORS = [
+  '#ef4444', '#f97316', '#eab308', '#84cc16',
+  '#22c55e', '#14b8a6', '#06b6d4', '#3b82f6',
+  '#6366f1', '#8b5cf6', '#ec4899', '#f43f5e',
+]
+
 export interface NoteInfo {
   note: string
   noteJP: string
