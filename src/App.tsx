@@ -1,6 +1,8 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { useAudioAnalyzer } from './hooks/useAudioAnalyzer'
+import { matchScales } from './utils/musicTheory'
 import { PitchDisplay } from './components/PitchDisplay'
+import { SolfegeRuler } from './components/SolfegeRuler'
 import { AudioVisualizer } from './components/AudioVisualizer'
 import { HarmonicDisplay } from './components/HarmonicDisplay'
 import { ScaleAnalyzer } from './components/ScaleAnalyzer'
@@ -11,10 +13,10 @@ import './App.css'
 type Tab = 'analysis' | 'absolute' | 'relative' | 'scale'
 
 const TABS: { id: Tab; label: string; labelJP: string }[] = [
-  { id: 'analysis', label: 'Analysis', labelJP: '分析' },
+  { id: 'analysis', label: 'Analysis',       labelJP: '分析'   },
   { id: 'absolute', label: 'Absolute Pitch', labelJP: '絶対音感' },
   { id: 'relative', label: 'Relative Pitch', labelJP: '相対音感' },
-  { id: 'scale',    label: 'Scale',          labelJP: '音階' },
+  { id: 'scale',    label: 'Scale',          labelJP: '音階'   },
 ]
 
 const MAX_RECENT = 30
@@ -30,13 +32,18 @@ export default function App() {
       const idx = state.noteInfo.noteIndex
       if (idx !== lastNoteRef.current) {
         lastNoteRef.current = idx
-        setRecentNoteIndices(prev => {
-          const next = [...prev, idx].slice(-MAX_RECENT)
-          return next
-        })
+        setRecentNoteIndices(prev => [...prev, idx].slice(-MAX_RECENT))
       }
     }
   }, [state.noteInfo?.noteIndex])
+
+  // Top scale match — drives movable-do display everywhere
+  const topScaleMatch = useMemo(
+    () => matchScales(recentNoteIndices)[0] ?? null,
+    [recentNoteIndices]
+  )
+
+  const clearHistory = () => { setRecentNoteIndices([]); lastNoteRef.current = null }
 
   return (
     <div className="app">
@@ -62,6 +69,15 @@ export default function App() {
           noteInfo={state.noteInfo}
           frequency={state.frequency}
           volume={state.volume}
+          scaleMatch={topScaleMatch}
+        />
+      </div>
+
+      {/* Always-visible ドレミ ruler */}
+      <div className="solfege-strip">
+        <SolfegeRuler
+          currentNoteIndex={state.noteInfo?.noteIndex ?? null}
+          scaleMatch={topScaleMatch}
         />
       </div>
 
@@ -87,11 +103,8 @@ export default function App() {
               <AudioVisualizer analyserNode={getAnalyser()} frequency={state.frequency} />
             </section>
             <section className="card">
-              <div className="card-title">共鳴・倍音分析 Resonance & Harmonics</div>
-              <HarmonicDisplay
-                resonanceData={state.resonanceData}
-                frequency={state.frequency}
-              />
+              <div className="card-title">共鳴・倍音分析 Resonance &amp; Harmonics</div>
+              <HarmonicDisplay resonanceData={state.resonanceData} frequency={state.frequency} />
             </section>
           </div>
         )}
@@ -123,12 +136,7 @@ export default function App() {
                 recentNoteIndices={recentNoteIndices}
               />
               {recentNoteIndices.length > 0 && (
-                <button
-                  className="clear-btn"
-                  onClick={() => { setRecentNoteIndices([]); lastNoteRef.current = null }}
-                >
-                  履歴クリア
-                </button>
+                <button className="clear-btn" onClick={clearHistory}>履歴クリア</button>
               )}
             </section>
           </div>
@@ -141,10 +149,11 @@ export default function App() {
             <div className="start-icon">🎙</div>
             <h2>音感トレーニングへようこそ</h2>
             <ul className="feature-list">
-              <li>🎯 <strong>絶対音感</strong> — リアルタイム音名・周波数・音程表示</li>
+              <li>🎵 <strong>ドレミ表示</strong> — 固定ド・移動ドの両方をリアルタイム表示</li>
+              <li>🎯 <strong>絶対音感</strong> — 音名・周波数・セント偏差</li>
               <li>↕ <strong>相対音感</strong> — 音程・インターバルの練習</li>
-              <li>🎹 <strong>音階</strong> — スケール判定・ピアノ鍵盤表示</li>
-              <li>✨ <strong>共鳴分析</strong> — 倍音・音の響きの美しさを可視化</li>
+              <li>🎹 <strong>音階</strong> — スケール自動判定・ピアノ鍵盤</li>
+              <li>✨ <strong>共鳴分析</strong> — 倍音・響きの美しさを可視化</li>
             </ul>
             <button className="start-btn" onClick={start}>
               🎤 マイクを起動して始める

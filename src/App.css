@@ -105,8 +105,133 @@ button { font-family: inherit; cursor: pointer; }
    Pitch strip
 ─────────────────────────────────────────── */
 .pitch-strip {
-  padding: 1rem 0;
+  padding: 1rem 0 0.5rem;
+}
+
+/* ───────────────────────────────────────────
+   Solfège ruler (always visible)
+─────────────────────────────────────────── */
+.solfege-strip {
+  padding: 0.5rem 0 0.75rem;
   border-bottom: 1px solid var(--border);
+}
+
+.solfege-ruler {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.sr-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.sr-key-label {
+  font-size: 0.7rem;
+  color: var(--dim);
+  font-family: monospace;
+}
+
+.sr-chromatic-badge {
+  font-size: 0.65rem;
+  background: rgba(251, 191, 36, 0.15);
+  border: 1px solid var(--yellow);
+  color: var(--yellow);
+  border-radius: 999px;
+  padding: 1px 7px;
+}
+
+.sr-degrees {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+}
+
+.sr-deg {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  flex: 1;
+  min-width: 40px;
+  padding: 6px 4px 5px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg2);
+  transition: all 0.12s;
+}
+
+.sr-deg.active {
+  background: rgba(0, 229, 255, 0.12);
+  border-color: var(--cyan);
+  box-shadow: 0 0 12px rgba(0, 229, 255, 0.3);
+  transform: translateY(-2px);
+}
+
+.sr-solfege {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text);
+  font-family: 'Noto Sans JP', sans-serif;
+  line-height: 1;
+}
+
+.sr-deg.active .sr-solfege {
+  color: var(--cyan);
+  text-shadow: 0 0 10px var(--cyan);
+}
+
+.sr-notename {
+  font-size: 0.65rem;
+  color: var(--dim);
+  font-family: monospace;
+}
+
+.sr-deg.active .sr-notename {
+  color: var(--cyan);
+}
+
+.sr-glow {
+  position: absolute;
+  inset: 0;
+  border-radius: 8px;
+  background: radial-gradient(circle at center, rgba(0,229,255,0.08) 0%, transparent 70%);
+  pointer-events: none;
+}
+
+/* Movable-do badge in pitch display */
+.movable-do-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 5px;
+  padding: 3px 10px;
+  background: rgba(168, 85, 247, 0.12);
+  border: 1px solid rgba(168, 85, 247, 0.4);
+  border-radius: 999px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.md-label {
+  font-size: 0.6rem;
+  color: var(--muted);
+}
+
+.md-value {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--purple);
+  font-family: 'Noto Sans JP', sans-serif;
+}
+
+.md-key {
+  font-size: 0.6rem;
+  color: var(--dim);
+  font-family: monospace;
 }
 
 .pitch-display {
