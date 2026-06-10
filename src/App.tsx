@@ -9,16 +9,18 @@ import { ScaleAnalyzer } from './components/ScaleAnalyzer'
 import { IntervalTrainer } from './components/IntervalTrainer'
 import { AbsolutePitchTrainer } from './components/AbsolutePitchTrainer'
 import { RecordingTab } from './components/RecordingTab'
+import { KaraokePractice } from './components/KaraokePractice'
 import './App.css'
 
-type Tab = 'analysis' | 'absolute' | 'relative' | 'scale' | 'recording'
+type Tab = 'analysis' | 'absolute' | 'relative' | 'scale' | 'recording' | 'karaoke'
 
 const TABS: { id: Tab; label: string; labelJP: string }[] = [
-  { id: 'analysis',  label: 'Analysis',       labelJP: '分析'   },
-  { id: 'absolute',  label: 'Absolute Pitch', labelJP: '絶対音感' },
-  { id: 'relative',  label: 'Relative Pitch', labelJP: '相対音感' },
-  { id: 'scale',     label: 'Scale',          labelJP: '音階'   },
-  { id: 'recording', label: 'Recording',      labelJP: '録音分析' },
+  { id: 'analysis',  label: 'Analysis',       labelJP: '分析'    },
+  { id: 'absolute',  label: 'Absolute Pitch', labelJP: '絶対音感'  },
+  { id: 'relative',  label: 'Relative Pitch', labelJP: '相対音感'  },
+  { id: 'scale',     label: 'Scale',          labelJP: '音階'    },
+  { id: 'recording', label: 'Recording',      labelJP: '録音分析'  },
+  { id: 'karaoke',   label: 'Karaoke',        labelJP: '🎤 採点'  },
 ]
 
 const MAX_RECENT = 30
@@ -149,6 +151,15 @@ export default function App() {
             <section className="card">
               <div className="card-title">録音・分析 Recording &amp; Analysis</div>
               <RecordingTab />
+            </section>
+          </div>
+        )}
+
+        {activeTab === 'karaoke' && (
+          <div className="tab-pane">
+            <section className="card">
+              <div className="card-title">カラオケ採点 Karaoke Scoring</div>
+              <KaraokePractice />
             </section>
           </div>
         )}
