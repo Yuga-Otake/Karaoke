@@ -1,3 +1,4 @@
+import { useRef } from 'react'
 import { ResonanceData } from '../utils/resonanceAnalysis'
 
 interface Props {
@@ -6,14 +7,21 @@ interface Props {
 }
 
 const SCORE_ITEMS = [
-  { key: 'resonanceScore', label: '共鳴',   color: '#4ade80' },
-  { key: 'clarityScore',   label: '明瞭度',  color: '#00e5ff' },
-  { key: 'harmoniScore',   label: '倍音',   color: '#a855f7' },
-  { key: 'brightnessScore',label: '輝き',   color: '#facc15' },
+  { key: 'resonanceScore',  label: '共鳴',   color: '#4ade80' },
+  { key: 'clarityScore',    label: '明瞭度',  color: '#00e5ff' },
+  { key: 'harmoniScore',    label: '倍音',   color: '#a855f7' },
+  { key: 'brightnessScore', label: '輝き',   color: '#facc15' },
 ] as const
 
 export function HarmonicDisplay({ resonanceData, frequency }: Props) {
-  if (!resonanceData || !frequency || resonanceData.harmonics.length === 0) {
+  const lastRef = useRef<{ data: ResonanceData; freq: number } | null>(null)
+
+  const isLive = !!(resonanceData && frequency && resonanceData.harmonics.length > 0)
+  if (isLive) lastRef.current = { data: resonanceData!, freq: frequency! }
+
+  const snapshot = lastRef.current
+
+  if (!snapshot) {
     return (
       <div className="hd-empty">
         マイクに向かって声を出すと倍音・共鳴を分析します
@@ -21,7 +29,9 @@ export function HarmonicDisplay({ resonanceData, frequency }: Props) {
     )
   }
 
-  const { harmonics, resonanceScore, harmoniScore, brightnessScore, clarityScore, spectralCentroid, totalHarmonics } = resonanceData
+  const { data: rd } = snapshot
+  const { harmonics, resonanceScore, harmoniScore, brightnessScore, clarityScore, spectralCentroid, totalHarmonics } = rd
+
   const noiseFloor = -80
   const maxDb = Math.max(...harmonics.map(h => h.db), noiseFloor + 1)
 
@@ -39,7 +49,7 @@ export function HarmonicDisplay({ resonanceData, frequency }: Props) {
   }
 
   return (
-    <div className="harmonic-display">
+    <div className="harmonic-display" style={!isLive ? { opacity: 0.55 } : {}}>
 
       {/* ── Harmonic bars ── */}
       <div className="hd-bars">
@@ -95,6 +105,7 @@ export function HarmonicDisplay({ resonanceData, frequency }: Props) {
         <div className="hd-summary-label">
           響きの美しさ
           <span style={{ color: scoreColor }}>&ensp;{qualityLabel}</span>
+          {!isLive && <span style={{ color: 'var(--dim)', fontSize: '0.7rem', marginLeft: '0.5rem' }}>（無音）</span>}
         </div>
         <div className="hd-summary-track">
           <div
