@@ -5,6 +5,7 @@
   --bg: #080b14;
   --bg2: #0d1117;
   --bg3: #0f172a;
+  --surface: #0d1117;
   --border: #1e293b;
   --cyan: #00e5ff;
   --purple: #a855f7;
@@ -1722,3 +1723,126 @@ button { font-family: inherit; cursor: pointer; }
 }
 .vt-rec-bar-fill { height: 100%; border-radius: 0.25rem; transition: width .5s ease; }
 .vt-rec-pct { font-size: 0.75rem; color: var(--muted); min-width: 2.5rem; text-align: right; }
+
+/* ───────────────────────────────────────────
+   New UI additions (completeness pass)
+─────────────────────────────────────────── */
+
+/* start overlay note */
+.start-note {
+  margin-top: 0.75rem;
+  font-size: 0.75rem;
+  color: var(--dim);
+  text-align: center;
+}
+
+/* karaoke: suggested root key hint */
+.kp-suggested-hint {
+  padding: 0.3rem 0.8rem;
+  border-radius: 20px;
+  border: 1px solid var(--cyan);
+  background: rgba(0,229,255,.08);
+  color: var(--cyan);
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: background .15s;
+  white-space: nowrap;
+}
+.kp-suggested-hint:hover { background: rgba(0,229,255,.18); }
+
+/* karaoke: progress counter */
+.kp-progress {
+  font-size: 0.72rem;
+  color: var(--dim);
+  text-align: right;
+  padding: 0 0.25rem 0.2rem;
+  letter-spacing: .05em;
+}
+
+/* karaoke: voice-not-detected warning */
+.lp-no-voice-warn {
+  text-align: center;
+  color: var(--yellow);
+  font-size: 0.82rem;
+  padding: 0.25rem 0;
+  animation: pulse-warn .9s ease-in-out infinite;
+}
+@keyframes pulse-warn {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.45; }
+}
+
+/* karaoke: beep→sing flash */
+.kp-sing-flash {
+  text-align: center;
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: var(--green);
+  margin: 0.25rem 0;
+  animation: kp-flash-fade .6s ease-out forwards;
+  pointer-events: none;
+}
+@keyframes kp-flash-fade {
+  0%   { opacity: 1; transform: translateY(0); }
+  100% { opacity: 0; transform: translateY(-16px); }
+}
+
+/* vocal technique: volume bar */
+.vt-vol-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.4rem;
+}
+.vt-vol-label {
+  font-size: 0.68rem;
+  color: var(--dim);
+  min-width: 2rem;
+}
+.vt-vol-track {
+  flex: 1;
+  height: 4px;
+  background: rgba(255,255,255,.08);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.vt-vol-fill {
+  height: 100%;
+  background: var(--cyan);
+  border-radius: 2px;
+  transition: width .05s linear;
+}
+
+/* vocal technique: partial metrics below threshold */
+.vt-partial-detect {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.82rem;
+  padding: 0.2rem 0;
+}
+.vt-hint-label {
+  font-size: 0.72rem;
+  color: var(--dim);
+}
+
+/* vocal technique: save to recording tab button */
+.vt-btn-small.save-to-rec {
+  background: rgba(74,222,128,.1);
+  border-color: var(--green);
+  color: var(--green);
+}
+.vt-btn-small.save-to-rec:hover { background: rgba(74,222,128,.2); }
+
+/* recording list: expression source badge */
+.ri-source-badge {
+  font-size: 0.8rem;
+  opacity: 0.85;
+}
+
+/* recording tab: hint sub-text */
+.rec-hint-sub {
+  font-size: 0.8rem;
+  color: var(--dim);
+  margin-top: 0.25rem;
+}

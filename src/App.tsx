@@ -1,6 +1,8 @@
-import { useState, useEffect, useRef, useMemo } from 'react'
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { useAudioAnalyzer } from './hooks/useAudioAnalyzer'
-import { matchScales } from './utils/musicTheory'
+import { matchScales, frequencyToNote } from './utils/musicTheory'
+import { Recording } from './hooks/useRecorder'
+import { PitchPoint } from './hooks/useVocalTechniqueAnalyzer'
 import { PitchDisplay } from './components/PitchDisplay'
 import { SolfegeRuler } from './components/SolfegeRuler'
 import { AudioVisualizer } from './components/AudioVisualizer'
@@ -26,12 +28,48 @@ const TABS: { id: Tab; label: string; labelJP: string }[] = [
 ]
 
 const MAX_RECENT = 30
+const ANALYZER_TABS: Tab[] = ['analysis', 'absolute', 'relative', 'scale']
+
+function pitchPointsToSamples(history: PitchPoint[]) {
+  const t0 = history[0]?.t ?? 0
+  return history.map(pt => ({
+    time: (pt.t - t0) / 1000,
+    frequency: pt.freq,
+    noteInfo: pt.freq ? frequencyToNote(pt.freq) : null,
+  }))
+}
 
 export default function App() {
   const { state, getAnalyser, start, stop } = useAudioAnalyzer()
   const [activeTab, setActiveTab] = useState<Tab>('analysis')
   const [recentNoteIndices, setRecentNoteIndices] = useState<number[]>([])
+  const [recordings, setRecordings] = useState<Recording[]>([])
   const lastNoteRef = useRef<number | null>(null)
+
+  const addRecording = useCallback((rec: Recording) => {
+    setRecordings(prev => [rec, ...prev])
+  }, [])
+
+  const deleteRecording = useCallback((id: string) => {
+    setRecordings(prev => {
+      const rec = prev.find(r => r.id === id)
+      if (rec?.url) URL.revokeObjectURL(rec.url)
+      return prev.filter(r => r.id !== id)
+    })
+  }, [])
+
+  const handleSaveExpression = useCallback((
+    url: string, blob: Blob, history: PitchPoint[], duration: number
+  ) => {
+    addRecording({
+      id: Date.now().toString(),
+      blob,
+      url,
+      duration,
+      samples: pitchPointsToSamples(history),
+      source: 'expression',
+    })
+  }, [addRecording])
 
   useEffect(() => {
     if (state.noteInfo) {
@@ -152,7 +190,11 @@ export default function App() {
           <div className="tab-pane">
             <section className="card">
               <div className="card-title">録音・分析 Recording &amp; Analysis</div>
-              <RecordingTab />
+              <RecordingTab
+                recordings={recordings}
+                onAddRecording={addRecording}
+                onDeleteRecording={deleteRecording}
+              />
             </section>
           </div>
         )}
@@ -161,7 +203,7 @@ export default function App() {
           <div className="tab-pane">
             <section className="card">
               <div className="card-title">カラオケ採点 Karaoke Scoring</div>
-              <KaraokePractice />
+              <KaraokePractice suggestedRoot={topScaleMatch?.root} />
             </section>
           </div>
         )}
@@ -170,13 +212,13 @@ export default function App() {
           <div className="tab-pane">
             <section className="card">
               <div className="card-title">表現技法トレーニング Vocal Expression</div>
-              <VocalTechniqueTrainer />
+              <VocalTechniqueTrainer onSaveToRecording={handleSaveExpression} />
             </section>
           </div>
         )}
       </main>
 
-      {!state.isListening && (
+      {!state.isListening && ANALYZER_TABS.includes(activeTab) && (
         <div className="start-overlay">
           <div className="start-card">
             <div className="start-icon">🎙</div>
@@ -187,10 +229,14 @@ export default function App() {
               <li>↕ <strong>相対音感</strong> — 音程・インターバルの練習</li>
               <li>🎹 <strong>音階</strong> — スケール自動判定・ピアノ鍵盤</li>
               <li>✨ <strong>共鳴分析</strong> — 倍音・響きの美しさを可視化</li>
+              <li>🎙 <strong>録音分析</strong> — ピッチタイムライン・音符分布の可視化</li>
+              <li>🎤 <strong>カラオケ採点</strong> — 音程精度・響きの美しさを採点</li>
+              <li>🎵 <strong>表現技法</strong> — ビブラート・こぶし・しゃくり・フォール</li>
             </ul>
             <button className="start-btn" onClick={start}>
               🎤 マイクを起動して始める
             </button>
+            <p className="start-note">録音・カラオケ・表現タブはマイク不要で開けます</p>
           </div>
         </div>
       )}

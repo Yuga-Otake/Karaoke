@@ -4,6 +4,12 @@ import { PitchTimeline } from './PitchTimeline'
 import { NoteHistogram } from './NoteHistogram'
 import { NOTE_NAMES_EN, NOTE_NAMES_JP } from '../utils/musicTheory'
 
+interface Props {
+  recordings: Recording[]
+  onAddRecording: (rec: Recording) => void
+  onDeleteRecording: (id: string) => void
+}
+
 function fmt(sec: number) {
   const m = Math.floor(sec / 60)
   const s = Math.floor(sec % 60)
@@ -14,7 +20,6 @@ function analyzeRecording(rec: Recording) {
   const pitched = rec.samples.filter(s => s.noteInfo !== null)
   if (pitched.length === 0) return null
 
-  // Note counts
   const counts = new Array(12).fill(0)
   for (const s of pitched) counts[s.noteInfo!.noteIndex]++
   const mostCommonIdx = counts.indexOf(Math.max(...counts))
@@ -23,7 +28,6 @@ function analyzeRecording(rec: Recording) {
   const highestMidi = Math.max(...midis)
   const lowestMidi  = Math.min(...midis)
 
-  // Stability: how close each pitch is to the nearest semitone
   const avgDeviation = pitched.reduce((sum, s) => sum + Math.abs(s.noteInfo!.cents), 0) / pitched.length
   const stability    = Math.max(0, Math.round(100 - (avgDeviation / 50) * 100))
 
@@ -37,8 +41,8 @@ function analyzeRecording(rec: Recording) {
   }
 }
 
-export function RecordingTab() {
-  const { state, startRecording, stopRecording, deleteRecording } = useRecorder()
+export function RecordingTab({ recordings, onAddRecording, onDeleteRecording }: Props) {
+  const { state, startRecording, stopRecording } = useRecorder(onAddRecording)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [playbackTime, setPlaybackTime] = useState(0)
   const [isPlaying, setIsPlaying]       = useState(false)
@@ -46,12 +50,12 @@ export function RecordingTab() {
 
   // Auto-select newest recording
   useEffect(() => {
-    if (state.recordings.length > 0 && !selectedId) {
-      setSelectedId(state.recordings[0].id)
+    if (recordings.length > 0 && !selectedId) {
+      setSelectedId(recordings[0].id)
     }
-  }, [state.recordings])
+  }, [recordings])
 
-  const selected = state.recordings.find(r => r.id === selectedId) ?? null
+  const selected = recordings.find(r => r.id === selectedId) ?? null
   const stats    = selected ? analyzeRecording(selected) : null
 
   const playRecording = (rec: Recording) => {
@@ -94,9 +98,9 @@ export function RecordingTab() {
       </div>
 
       {/* ── Recording list ─────────────────────────────── */}
-      {state.recordings.length > 0 && (
+      {recordings.length > 0 && (
         <div className="rec-list">
-          {state.recordings.map((rec, i) => {
+          {recordings.map((rec, i) => {
             const rStats = analyzeRecording(rec)
             return (
               <div
@@ -104,7 +108,10 @@ export function RecordingTab() {
                 className={`rec-item ${selectedId === rec.id ? 'selected' : ''}`}
                 onClick={() => { setSelectedId(rec.id); setPlaybackTime(0); setIsPlaying(false) }}
               >
-                <span className="ri-num">#{state.recordings.length - i}</span>
+                <span className="ri-num">#{recordings.length - i}</span>
+                {rec.source === 'expression' && (
+                  <span className="ri-source-badge">🎵</span>
+                )}
                 <span className="ri-dur">{fmt(rec.duration)}</span>
                 {rStats && (
                   <span className="ri-info">
@@ -120,7 +127,11 @@ export function RecordingTab() {
                 <button
                   className="ri-del"
                   title="削除"
-                  onClick={e => { e.stopPropagation(); if (selectedId === rec.id) setSelectedId(null); deleteRecording(rec.id) }}
+                  onClick={e => {
+                    e.stopPropagation()
+                    if (selectedId === rec.id) setSelectedId(null)
+                    onDeleteRecording(rec.id)
+                  }}
                 >✕</button>
               </div>
             )
@@ -131,8 +142,6 @@ export function RecordingTab() {
       {/* ── Analysis ───────────────────────────────────── */}
       {selected && (
         <div className="rec-analysis">
-
-          {/* Playback bar */}
           <div className="rec-playback-bar">
             <button className="rpb-btn" onClick={() => playRecording(selected)}>▶ 再生</button>
             {audioRef.current && (
@@ -150,7 +159,6 @@ export function RecordingTab() {
             >⬇ 保存</a>
           </div>
 
-          {/* Pitch timeline */}
           <div className="ra-section">
             <div className="ra-title">ピッチタイムライン Pitch Timeline</div>
             <PitchTimeline
@@ -160,13 +168,11 @@ export function RecordingTab() {
             />
           </div>
 
-          {/* Histogram + Stats */}
           <div className="ra-row">
             <div className="ra-col">
               <div className="ra-title">音符分布 Note Distribution</div>
               <NoteHistogram samples={selected.samples} />
             </div>
-
             {stats && (
               <div className="ra-col ra-stats-col">
                 <div className="ra-title">統計 Statistics</div>
@@ -192,11 +198,12 @@ export function RecordingTab() {
         </div>
       )}
 
-      {state.recordings.length === 0 && !state.isRecording && (
+      {recordings.length === 0 && !state.isRecording && (
         <div className="rec-hint">
           <div className="rh-icon">🎙</div>
           <p>● 録音開始ボタンで録音を開始します</p>
           <p>停止後、ピッチタイムライン・音符分布・統計を分析します</p>
+          <p className="rec-hint-sub">🎵 表現タブの録音もここに保存できます</p>
         </div>
       )}
     </div>

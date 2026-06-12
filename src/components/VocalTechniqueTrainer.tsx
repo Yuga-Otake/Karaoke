@@ -174,9 +174,11 @@ function fmt(sec: number) {
 function RecordingResult({
   recording,
   onClear,
+  onSave,
 }: {
-  recording: { history: PitchPoint[]; url: string | null; duration: number }
+  recording: { history: PitchPoint[]; url: string | null; blob?: Blob | null; duration: number }
   onClear: () => void
+  onSave?: () => void
 }) {
   const windowMs = Math.max(4000, recording.duration * 1000 * 1.05)
 
@@ -202,6 +204,11 @@ function RecordingResult({
           <a className="vt-btn-small download" href={recording.url} download="vocal-practice.webm">
             ⬇ 保存
           </a>
+        )}
+        {onSave && (
+          <button className="vt-btn-small save-to-rec" onClick={onSave}>
+            🎵 録音タブに保存
+          </button>
         )}
       </div>
 
@@ -231,15 +238,19 @@ function RecordingResult({
 
 // ─── Main component ──────────────────────────────────────────────────────────
 
-export function VocalTechniqueTrainer() {
+interface Props {
+  onSaveToRecording?: (url: string, blob: Blob, history: PitchPoint[], duration: number) => void
+}
+
+export function VocalTechniqueTrainer({ onSaveToRecording }: Props) {
   const { state, start, stop, startRecording, stopRecording, clearRecording } =
     useVocalTechniqueAnalyzer()
 
   const [focus, setFocus] = useState<VocalTechnique>('vibrato')
-  const { active, recording, metrics, liveHistory, savedRecording, error } = state
-  const { detected, confidence, rate, depth, delta } = metrics
+  const { active, recording, metrics, stableDetected, liveHistory, savedRecording, error, volume } = state
+  const { confidence, rate, depth, delta } = metrics
 
-  const focusDetected = detected === focus && confidence > 40
+  const focusDetected = stableDetected === focus
   const guide = GUIDE[focus]
 
   return (
@@ -250,7 +261,7 @@ export function VocalTechniqueTrainer() {
         {ORDERED.map(t => (
           <button
             key={t}
-            className={`vt-tech-btn ${focus === t ? 'focus' : ''} ${detected === t && active && confidence > 40 ? 'live-detected' : ''}`}
+            className={`vt-tech-btn ${focus === t ? 'focus' : ''} ${stableDetected === t && active ? 'live-detected' : ''}`}
             style={focus === t ? { borderColor: TECH_COLORS[t], color: TECH_COLORS[t] } : {}}
             onClick={() => setFocus(t)}
           >
@@ -297,37 +308,47 @@ export function VocalTechniqueTrainer() {
         </div>
       )}
 
+      {/* Volume indicator */}
+      {active && (
+        <div className="vt-vol-row">
+          <span className="vt-vol-label">音量</span>
+          <div className="vt-vol-track">
+            <div className="vt-vol-fill" style={{ width: `${Math.min(100, Math.round(volume * 300))}%` }} />
+          </div>
+        </div>
+      )}
+
       {/* Live metrics */}
       {active && (
         <div className={`vt-metrics ${focusDetected ? 'focus-detected' : ''}`}>
-          {detected !== 'none' && confidence > 40 ? (
+          {stableDetected !== 'none' ? (
             <>
               <div
                 className="vt-badge"
                 style={{
-                  background: TECH_BG[detected],
-                  borderColor: TECH_COLORS[detected],
-                  color: TECH_COLORS[detected],
+                  background: TECH_BG[stableDetected],
+                  borderColor: TECH_COLORS[stableDetected],
+                  color: TECH_COLORS[stableDetected],
                 }}
               >
-                ✓ {GUIDE[detected].jp}検出！
+                ✓ {GUIDE[stableDetected].jp}検出！
                 <span className="vt-badge-conf">{confidence}%</span>
               </div>
 
-              {(detected === 'vibrato' || detected === 'kobushi') && (
+              {(stableDetected === 'vibrato' || stableDetected === 'kobushi') && (
                 <div className="vt-metric-row">
                   <div className="vt-metric">
                     <span className="vt-metric-label">速さ</span>
-                    <span className="vt-metric-val" style={{ color: TECH_COLORS[detected] }}>
+                    <span className="vt-metric-val" style={{ color: TECH_COLORS[stableDetected] }}>
                       {rate.toFixed(1)} Hz
                     </span>
                     <span className="vt-metric-hint">
-                      目標: {detected === 'vibrato' ? '5〜7' : '8〜15'} Hz
+                      目標: {stableDetected === 'vibrato' ? '5〜7' : '8〜15'} Hz
                     </span>
                   </div>
                   <div className="vt-metric">
                     <span className="vt-metric-label">深さ</span>
-                    <span className="vt-metric-val" style={{ color: TECH_COLORS[detected] }}>
+                    <span className="vt-metric-val" style={{ color: TECH_COLORS[stableDetected] }}>
                       ±{depth}¢
                     </span>
                     <span className="vt-metric-hint">目標: ±30〜60¢</span>
@@ -335,33 +356,53 @@ export function VocalTechniqueTrainer() {
                 </div>
               )}
 
-              {(detected === 'shakuri' || detected === 'fall') && (
+              {(stableDetected === 'shakuri' || stableDetected === 'fall') && (
                 <div className="vt-metric-row">
                   <div className="vt-metric">
                     <span className="vt-metric-label">音程変化</span>
-                    <span className="vt-metric-val" style={{ color: TECH_COLORS[detected] }}>
+                    <span className="vt-metric-val" style={{ color: TECH_COLORS[stableDetected] }}>
                       {delta > 0 ? '+' : ''}{delta}¢
                     </span>
                     <span className="vt-metric-hint">
-                      {detected === 'shakuri' ? '↑ 上昇' : '↓ 下降'}
+                      {stableDetected === 'shakuri' ? '↑ 上昇' : '↓ 下降'}
                     </span>
                   </div>
                 </div>
               )}
             </>
           ) : (
-            <div className="vt-hint-msg">
-              {state.freq
-                ? `${Math.round(state.freq)} Hz — ${focus === 'vibrato' || focus === 'kobushi' ? '音を伸ばしながら揺らしてみましょう' : focus === 'shakuri' ? '音の頭を下から滑り込ませてみましょう' : '音を出してから下に流してみましょう'}`
-                : '声を出してください…'}
-            </div>
+            <>
+              {(focus === 'vibrato' || focus === 'kobushi') && rate > 0 && (
+                <div className="vt-partial-detect">
+                  <span style={{ opacity: 0.4 }}>{rate.toFixed(1)} Hz&nbsp;/&nbsp;±{depth}¢</span>
+                  <span className="vt-hint-label"> 検出中…</span>
+                </div>
+              )}
+              <div className="vt-hint-msg">
+                {state.freq
+                  ? `${Math.round(state.freq)} Hz — ${focus === 'vibrato' || focus === 'kobushi' ? '音を伸ばしながら揺らしてみましょう' : focus === 'shakuri' ? '音の頭を下から滑り込ませてみましょう' : '音を出してから下に流してみましょう'}`
+                  : '声を出してください…'}
+              </div>
+            </>
           )}
         </div>
       )}
 
       {/* Saved recording */}
       {savedRecording && (
-        <RecordingResult recording={savedRecording} onClear={clearRecording} />
+        <RecordingResult
+          recording={savedRecording}
+          onClear={clearRecording}
+          onSave={onSaveToRecording && savedRecording.blob && savedRecording.url
+            ? () => onSaveToRecording(
+                savedRecording.url as string,
+                savedRecording.blob as Blob,
+                savedRecording.history,
+                savedRecording.duration
+              )
+            : undefined
+          }
+        />
       )}
     </div>
   )

@@ -10,24 +10,23 @@ export interface PitchSample {
 
 export interface Recording {
   id: string
-  blob: Blob
+  blob?: Blob
   url: string
   duration: number        // seconds
   samples: PitchSample[]
+  source?: 'recording' | 'expression'
 }
 
 interface RecorderState {
   isRecording: boolean
   elapsed: number         // ms since recording started
-  recordings: Recording[]
   error: string | null
 }
 
-export function useRecorder() {
+export function useRecorder(onSave: (rec: Recording) => void) {
   const [state, setState] = useState<RecorderState>({
     isRecording: false,
     elapsed: 0,
-    recordings: [],
     error: null,
   })
 
@@ -40,6 +39,8 @@ export function useRecorder() {
   const startTimeRef     = useRef<number>(0)
   const pitchIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const timerIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const onSaveRef        = useRef(onSave)
+  onSaveRef.current      = onSave
 
   const startRecording = useCallback(async () => {
     try {
@@ -70,7 +71,6 @@ export function useRecorder() {
       recorder.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data) }
       recorder.start(200)
 
-      // Pitch detection at ~20fps
       const timeBuf = new Float32Array(4096)
       pitchIntervalRef.current = setInterval(() => {
         if (!analyserRef.current || !audioCtxRef.current) return
@@ -112,13 +112,10 @@ export function useRecorder() {
         url: URL.createObjectURL(blob),
         duration,
         samples,
+        source: 'recording',
       }
-      setState(prev => ({
-        isRecording: false,
-        elapsed: 0,
-        error: null,
-        recordings: [recording, ...prev.recordings],
-      }))
+      setState(prev => ({ ...prev, isRecording: false, elapsed: 0, error: null }))
+      onSaveRef.current(recording)
     }
 
     recorder.stop()
@@ -127,13 +124,5 @@ export function useRecorder() {
     analyserRef.current = null
   }, [])
 
-  const deleteRecording = useCallback((id: string) => {
-    setState(prev => {
-      const rec = prev.recordings.find(r => r.id === id)
-      if (rec) URL.revokeObjectURL(rec.url)
-      return { ...prev, recordings: prev.recordings.filter(r => r.id !== id) }
-    })
-  }, [])
-
-  return { state, startRecording, stopRecording, deleteRecording }
+  return { state, startRecording, stopRecording }
 }

@@ -2,6 +2,7 @@ import { useState, useRef, useCallback, useEffect } from 'react'
 import { detectPitch } from '../utils/pitchDetection'
 import { frequencyToNote, midiToFrequency, NOTE_NAMES_EN, NOTE_NAMES_JP, SCALES } from '../utils/musicTheory'
 import { analyzeResonance } from '../utils/resonanceAnalysis'
+import { gradeOf } from '../utils/scoring'
 
 export interface KaraokeNote {
   midiNumber: number
@@ -42,15 +43,6 @@ const INITIAL: KaraokeState = {
   noteScores: [], totalScore: 0,
   liveAccuracy: 0, liveResonance: 0, liveCents: 0, liveDetected: false,
   error: null,
-}
-
-function gradeOf(score: number): string {
-  if (score >= 95) return 'S'
-  if (score >= 85) return 'A'
-  if (score >= 70) return 'B'
-  if (score >= 55) return 'C'
-  if (score >= 35) return 'D'
-  return 'F'
 }
 
 function playBeep(ctx: AudioContext, midi: number, durationSec = 0.45) {

@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useRef, useEffect } from 'react'
 import {
   useKaraoke,
   buildSequence,
@@ -6,7 +6,8 @@ import {
   NoteScore,
   KaraokePhase,
 } from '../hooks/useKaraoke'
-import { NOTE_NAMES_EN, SCALES, midiToFrequency } from '../utils/musicTheory'
+import { NOTE_NAMES_EN, midiToFrequency } from '../utils/musicTheory'
+import { gradeOf } from '../utils/scoring'
 
 // ─── Settings ────────────────────────────────────────────────────────────────
 
@@ -51,6 +52,9 @@ function NoteRoll({
 }) {
   return (
     <div className="note-roll-wrap">
+      {currentIdx >= 0 && notes.length > 0 && (
+        <div className="kp-progress">{currentIdx + 1} / {notes.length}</div>
+      )}
       <div className="note-roll">
         {notes.map((n, i) => {
           const score  = scores[i]
@@ -121,6 +125,9 @@ function LivePanel({
 
       {phase === 'sing' && (
         <>
+          {!liveDetected && (
+            <div className="lp-no-voice-warn">⚠ 声が検出されていません 🎤</div>
+          )}
           {/* Deviation gauge */}
           <div className="lp-gauge-wrap">
             <span className="lp-gauge-lbl low">低い</span>
@@ -226,24 +233,16 @@ function ResultsPanel({ scores, totalScore }: { scores: NoteScore[]; totalScore:
   )
 }
 
-function gradeOf(score: number) {
-  if (score >= 95) return 'S'
-  if (score >= 85) return 'A'
-  if (score >= 70) return 'B'
-  if (score >= 55) return 'C'
-  if (score >= 35) return 'D'
-  return 'F'
-}
-
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export function KaraokePractice() {
+export function KaraokePractice({ suggestedRoot }: { suggestedRoot?: number }) {
   const { state, start, stop } = useKaraoke()
 
   const [seqId,     setSeqId]     = useState('up')
   const [rootNote,  setRootNote]  = useState(0)   // C
   const [octave,    setOctave]    = useState(4)
   const [tempoId,   setTempoId]   = useState('normal')
+  const [singFlash, setSingFlash] = useState(false)
 
   const seqOpt   = SEQUENCE_OPTIONS.find(s => s.id === seqId)!
   const tempoOpt = TEMPO_OPTIONS.find(t => t.id === tempoId)!
@@ -260,6 +259,16 @@ export function KaraokePractice() {
 
   const isRunning = phase !== 'idle' && phase !== 'complete'
   const currentNote = notes[currentNoteIdx]
+
+  const prevPhaseRef = useRef<KaraokePhase | null>(null)
+  useEffect(() => {
+    if (prevPhaseRef.current === 'beep' && phase === 'sing') {
+      setSingFlash(true)
+      const t = setTimeout(() => setSingFlash(false), 600)
+      return () => clearTimeout(t)
+    }
+    prevPhaseRef.current = phase
+  }, [phase])
 
   return (
     <div className="karaoke-practice">
@@ -283,6 +292,11 @@ export function KaraokePractice() {
             ))}
           </select>
         </label>
+        {suggestedRoot !== undefined && suggestedRoot !== rootNote && !isRunning && (
+          <button className="kp-suggested-hint" onClick={() => setRootNote(suggestedRoot)}>
+            検出キー: {NOTE_NAMES_EN[suggestedRoot]} — 適用する
+          </button>
+        )}
 
         <label className="kp-setting">
           <span>オクターブ</span>
@@ -342,6 +356,10 @@ export function KaraokePractice() {
             <p>✱ イヤフォン使用を推奨します</p>
           </div>
         </div>
+      )}
+
+      {singFlash && (
+        <div className="kp-sing-flash">↑ 歌って！</div>
       )}
 
       {/* Live panel */}

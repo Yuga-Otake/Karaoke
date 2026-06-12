@@ -24,10 +24,12 @@ export interface VTAState {
   freq: number | null
   volume: number
   metrics: TechniqueMetrics
-  liveHistory: PitchPoint[]     // rolling last 4 s
+  stableDetected: VocalTechnique  // hysteresis-filtered for badge display
+  liveHistory: PitchPoint[]       // rolling last 4 s
   savedRecording: {
     history: PitchPoint[]
     url: string | null
+    blob: Blob | null
     duration: number
   } | null
   error: string | null
@@ -47,6 +49,7 @@ const INITIAL: VTAState = {
   active: false, recording: false,
   freq: null, volume: 0,
   metrics: EMPTY_METRICS,
+  stableDetected: 'none',
   liveHistory: [],
   savedRecording: null,
   error: null,
@@ -139,6 +142,7 @@ export function useVocalTechniqueAnalyzer() {
   const recHistRef   = useRef<PitchPoint[]>([])
   const liveHistRef  = useRef<PitchPoint[]>([])
   const recStartRef  = useRef<number>(0)
+  const techRunRef   = useRef<{ tech: VocalTechnique; count: number }>({ tech: 'none', count: 0 })
 
   const cleanup = useCallback(() => {
     timerRef.current && clearInterval(timerRef.current)
@@ -204,6 +208,13 @@ export function useVocalTechniqueAnalyzer() {
         }
       }
 
+      if (technique !== 'none' && technique === techRunRef.current.tech) {
+        techRunRef.current.count++
+      } else {
+        techRunRef.current = { tech: technique, count: technique !== 'none' ? 1 : 0 }
+      }
+      const stableDetected: VocalTechnique = techRunRef.current.count >= 3 ? technique : 'none'
+
       const pt: PitchPoint = { t: now, freq, midi, technique }
       liveHistRef.current = [...liveHistRef.current, pt].slice(-MAX_LIVE)
       if (mediaRecRef.current?.state === 'recording') recHistRef.current.push(pt)
@@ -214,6 +225,7 @@ export function useVocalTechniqueAnalyzer() {
         freq,
         volume,
         metrics,
+        stableDetected,
         liveHistory: [...liveHistRef.current],
       }))
     }, INTERVAL_MS)
@@ -225,6 +237,7 @@ export function useVocalTechniqueAnalyzer() {
     if (mediaRecRef.current?.state === 'recording') mediaRecRef.current.stop()
     cleanup()
     liveHistRef.current = []
+    techRunRef.current = { tech: 'none', count: 0 }
     setState(INITIAL)
   }, [cleanup])
 
@@ -243,7 +256,7 @@ export function useVocalTechniqueAnalyzer() {
       const duration = (performance.now() - recStartRef.current) / 1000
       setState(prev => ({
         ...prev, recording: false,
-        savedRecording: { history: [...recHistRef.current], url, duration },
+        savedRecording: { history: [...recHistRef.current], url, blob, duration },
       }))
     }
     mr.start()
