@@ -53,7 +53,7 @@ export function useAudioAnalyzer() {
       analyser.fftSize = FFT_SIZE
       analyser.smoothingTimeConstant = 0.6
       analyser.minDecibels = -100
-      analyser.maxDecibels = -10
+      analyser.maxDecibels = 0
       analyserRef.current = analyser
 
       const source = audioCtx.createMediaStreamSource(stream)
@@ -93,7 +93,7 @@ export function useAudioAnalyzer() {
           }
           smoothedFreq = smoothedFreqRef.current
         } else {
-          if (volume < 0.005) smoothedFreqRef.current = null
+          if (volume < 0.002) smoothedFreqRef.current = null
           smoothedFreq = smoothedFreqRef.current
         }
 

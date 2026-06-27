@@ -8,13 +8,13 @@ export function computeRMS(buffer: Float32Array): number {
 }
 
 export function detectPitch(buffer: Float32Array, sampleRate: number): number | null {
-  if (computeRMS(buffer) < 0.008) return null
+  if (computeRMS(buffer) < 0.003) return null
 
   const minFreq = 60
-  const maxFreq = 2000
+  const maxFreq = 3500
   const minTau = Math.max(2, Math.floor(sampleRate / maxFreq))
   const maxTau = Math.min(Math.ceil(sampleRate / minFreq), Math.floor(buffer.length / 2))
-  const threshold = 0.15
+  const threshold = 0.18
 
   // Step 1: Difference function (only for relevant tau range)
   const d = new Float32Array(maxTau + 1)
@@ -51,7 +51,7 @@ export function detectPitch(buffer: Float32Array, sampleRate: number): number | 
     for (let t = minTau + 1; t <= maxTau; t++) {
       if (dp[t] < minVal) { minVal = dp[t]; minIdx = t }
     }
-    if (minVal > 0.35) return null
+    if (minVal > 0.40) return null
     tau = minIdx
   }
 
