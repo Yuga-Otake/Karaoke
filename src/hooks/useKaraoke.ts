@@ -3,6 +3,7 @@ import { detectPitch } from '../utils/pitchDetection'
 import { frequencyToNote, midiToFrequency, NOTE_NAMES_EN, NOTE_NAMES_JP, SCALES } from '../utils/musicTheory'
 import { analyzeResonance } from '../utils/resonanceAnalysis'
 import { gradeOf } from '../utils/scoring'
+import { playBeep } from '../utils/audioUtils'
 
 export interface KaraokeNote {
   midiNumber: number
@@ -20,6 +21,8 @@ export interface NoteScore {
   totalScore: number     // 0-100
   grade: string
   centsAvg: number       // average absolute cents off target
+  timingScore: number    // 0-100: attack + duration combined
+  attackMs: number | null  // ms from sing start to first voice; null = never sang
 }
 
 export type KaraokePhase = 'idle' | 'countdown' | 'beep' | 'sing' | 'complete'
@@ -43,23 +46,6 @@ const INITIAL: KaraokeState = {
   noteScores: [], totalScore: 0,
   liveAccuracy: 0, liveResonance: 0, liveCents: 0, liveDetected: false,
   error: null,
-}
-
-function playBeep(ctx: AudioContext, midi: number, durationSec = 0.45) {
-  const freq = midiToFrequency(midi)
-  const osc  = ctx.createOscillator()
-  const gain = ctx.createGain()
-  osc.type = 'triangle'
-  osc.frequency.value = freq
-  // Piano-like envelope
-  gain.gain.setValueAtTime(0, ctx.currentTime)
-  gain.gain.linearRampToValueAtTime(0.4, ctx.currentTime + 0.02)
-  gain.gain.exponentialRampToValueAtTime(0.12, ctx.currentTime + durationSec * 0.6)
-  gain.gain.linearRampToValueAtTime(0, ctx.currentTime + durationSec)
-  osc.connect(gain)
-  gain.connect(ctx.destination)
-  osc.start()
-  osc.stop(ctx.currentTime + durationSec + 0.05)
 }
 
 export function buildSequence(
@@ -169,6 +155,7 @@ export function useKaraoke() {
       const timeBuf      = new Float32Array(4096)
       const freqBuf      = new Float32Array(2048)
       const sampleData: Array<{ pitch: number; res: number; cents: number; detected: boolean }> = []
+      let attackMs: number | null = null
       const t0           = Date.now()
 
       while (Date.now() - t0 < singWindowMs && !stopRef.current) {
@@ -182,6 +169,7 @@ export function useKaraoke() {
           let cents = 0, pitchScore = 0, resonance = 0
 
           if (freq) {
+            if (attackMs === null) attackMs = Date.now() - t0
             cents      = Math.log2(freq / targetFreq) * 1200  // signed, relative to target
             pitchScore = Math.max(0, 100 - Math.abs(cents) * 1.5)
             resonance  = analyzeResonance(freqBuf, freq, ctx.sampleRate, 4096).resonanceScore
@@ -217,6 +205,17 @@ export function useKaraoke() {
 
       const total = Math.round(avgPitch * 0.65 + avgRes * 0.35)
 
+      // Timing score: attack (300ms grace → 700ms cutoff) + duration ratio
+      let attackScore = 0
+      if (attackMs !== null) {
+        if (attackMs <= 300) attackScore = 100
+        else if (attackMs <= 700) attackScore = Math.round(100 * (1 - (attackMs - 300) / 400))
+      }
+      let durationScore = 0
+      if (voicedRatio >= 0.75)      durationScore = 100
+      else if (voicedRatio >= 0.25) durationScore = Math.round((voicedRatio - 0.25) / 0.5 * 100)
+      const timingScore = Math.round(attackScore * 0.6 + durationScore * 0.4)
+
       noteScores.push({
         note,
         pitchAccuracy: Math.round(Math.min(100, avgPitch)),
@@ -224,6 +223,8 @@ export function useKaraoke() {
         totalScore: Math.min(100, total),
         grade: gradeOf(Math.min(100, total)),
         centsAvg: Math.round(avgCentsAbs),
+        timingScore,
+        attackMs,
       })
 
       setState(prev => ({ ...prev, noteScores: [...noteScores] }))

@@ -174,8 +174,9 @@ function LivePanel({
 }
 
 function ResultsPanel({ scores, totalScore }: { scores: NoteScore[]; totalScore: number }) {
-  const avgPitch = Math.round(scores.reduce((s, n) => s + n.pitchAccuracy, 0) / (scores.length || 1))
-  const avgRes   = Math.round(scores.reduce((s, n) => s + n.resonance,     0) / (scores.length || 1))
+  const avgPitch   = Math.round(scores.reduce((s, n) => s + n.pitchAccuracy, 0) / (scores.length || 1))
+  const avgRes     = Math.round(scores.reduce((s, n) => s + n.resonance,     0) / (scores.length || 1))
+  const avgTiming  = Math.round(scores.reduce((s, n) => s + n.timingScore,   0) / (scores.length || 1))
   const stars    = totalScore >= 95 ? 5 : totalScore >= 80 ? 4 : totalScore >= 65 ? 3 : totalScore >= 45 ? 2 : 1
   const color    = GRADE_COLOR[scores.length > 0
     ? scores.reduce((best, s) => s.totalScore > best.totalScore ? s : best).grade
@@ -211,6 +212,13 @@ function ResultsPanel({ scores, totalScore }: { scores: NoteScore[]; totalScore:
           </div>
           <span>{avgRes}%</span>
         </div>
+        <div className="rp-summary-row">
+          <span>タイミング</span>
+          <div className="rp-sum-bar">
+            <div style={{ width: `${avgTiming}%`, background: '#f59e0b' }} />
+          </div>
+          <span>{avgTiming}%</span>
+        </div>
       </div>
 
       <div className="rp-note-breakdown">
@@ -225,6 +233,9 @@ function ResultsPanel({ scores, totalScore }: { scores: NoteScore[]; totalScore:
               />
             </div>
             <span className="rpn-cents">{s.centsAvg < 999 ? `±${s.centsAvg}¢` : '---'}</span>
+            <span className={`rpn-timing ${s.timingScore >= 80 ? 'timing-good' : s.timingScore >= 50 ? 'timing-ok' : 'timing-late'}`}>
+              {s.attackMs === null ? '---' : s.attackMs <= 300 ? '速' : s.attackMs <= 700 ? '遅め' : '✗'}
+            </span>
             <span className="rpn-grade" style={{ color: GRADE_COLOR[s.grade] }}>{s.grade}</span>
           </div>
         ))}

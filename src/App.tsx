@@ -13,9 +13,10 @@ import { AbsolutePitchTrainer } from './components/AbsolutePitchTrainer'
 import { RecordingTab } from './components/RecordingTab'
 import { KaraokePractice } from './components/KaraokePractice'
 import { VocalTechniqueTrainer } from './components/VocalTechniqueTrainer'
+import { RangeCheck } from './components/RangeCheck'
 import './App.css'
 
-type Tab = 'analysis' | 'absolute' | 'relative' | 'scale' | 'recording' | 'karaoke' | 'expression'
+type Tab = 'analysis' | 'absolute' | 'relative' | 'scale' | 'recording' | 'range' | 'karaoke' | 'expression'
 
 const TABS: { id: Tab; label: string; labelJP: string }[] = [
   { id: 'analysis',   label: 'Analysis',       labelJP: '分析'    },
@@ -23,8 +24,9 @@ const TABS: { id: Tab; label: string; labelJP: string }[] = [
   { id: 'relative',   label: 'Relative Pitch', labelJP: '相対音感'  },
   { id: 'scale',      label: 'Scale',          labelJP: '音階'    },
   { id: 'recording',  label: 'Recording',      labelJP: '録音分析'  },
+  { id: 'range',      label: 'Range Check',    labelJP: '🎵 音域'  },
   { id: 'karaoke',    label: 'Karaoke',        labelJP: '🎤 採点'  },
-  { id: 'expression', label: 'Expression',     labelJP: '🎵 表現'  },
+  { id: 'expression', label: 'Expression',     labelJP: '表現'    },
 ]
 
 const MAX_RECENT = 30
@@ -195,6 +197,15 @@ export default function App() {
                 onAddRecording={addRecording}
                 onDeleteRecording={deleteRecording}
               />
+            </section>
+          </div>
+        )}
+
+        {activeTab === 'range' && (
+          <div className="tab-pane">
+            <section className="card">
+              <div className="card-title">音域チェック Vocal Range Check</div>
+              <RangeCheck />
             </section>
           </div>
         )}
