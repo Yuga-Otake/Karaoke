@@ -14,9 +14,10 @@ import { RecordingTab } from './components/RecordingTab'
 import { KaraokePractice } from './components/KaraokePractice'
 import { VocalTechniqueTrainer } from './components/VocalTechniqueTrainer'
 import { RangeCheck } from './components/RangeCheck'
+import { VoiceRegisterTrainer } from './components/VoiceRegisterTrainer'
 import './App.css'
 
-type Tab = 'analysis' | 'absolute' | 'relative' | 'scale' | 'recording' | 'range' | 'karaoke' | 'expression'
+type Tab = 'analysis' | 'absolute' | 'relative' | 'scale' | 'recording' | 'range' | 'karaoke' | 'expression' | 'register'
 
 const TABS: { id: Tab; label: string; labelJP: string }[] = [
   { id: 'analysis',   label: 'Analysis',       labelJP: '分析'    },
@@ -27,6 +28,7 @@ const TABS: { id: Tab; label: string; labelJP: string }[] = [
   { id: 'range',      label: 'Range Check',    labelJP: '🎵 音域'  },
   { id: 'karaoke',    label: 'Karaoke',        labelJP: '🎤 採点'  },
   { id: 'expression', label: 'Expression',     labelJP: '表現'    },
+  { id: 'register',   label: 'Voice Register', labelJP: '🎙 声区'  },
 ]
 
 const MAX_RECENT = 30
@@ -224,6 +226,15 @@ export default function App() {
             <section className="card">
               <div className="card-title">表現技法トレーニング Vocal Expression</div>
               <VocalTechniqueTrainer onSaveToRecording={handleSaveExpression} />
+            </section>
+          </div>
+        )}
+
+        {activeTab === 'register' && (
+          <div className="tab-pane">
+            <section className="card">
+              <div className="card-title">声区トレーニング Voice Register</div>
+              <VoiceRegisterTrainer />
             </section>
           </div>
         )}

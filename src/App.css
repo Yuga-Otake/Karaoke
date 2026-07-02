@@ -2064,3 +2064,279 @@ button { font-family: inherit; cursor: pointer; }
   border: 1px solid var(--border);
 }
 .rc-instructions p { line-height: 1.6; }
+
+/* ===== Voice Register Trainer (.vr-) ===== */
+.vr-trainer {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+/* Register meter */
+.vr-register-meter {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.vr-reg-cards {
+  display: flex;
+  gap: 0.6rem;
+}
+
+.vr-reg-card {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.75rem 0.5rem;
+  border-radius: 0.5rem;
+  border: 2px solid var(--border);
+  background: var(--bg2);
+  transition: border-color .2s, transform .2s, box-shadow .2s;
+  cursor: default;
+}
+.vr-reg-card.active {
+  border-color: var(--vr-color, var(--cyan));
+  box-shadow: 0 0 12px color-mix(in srgb, var(--vr-color, var(--cyan)) 35%, transparent);
+  transform: scale(1.04);
+  background: color-mix(in srgb, var(--vr-color, var(--cyan)) 8%, var(--bg2));
+}
+.vr-reg-jp {
+  font-size: 1.15rem;
+  font-weight: 900;
+  color: var(--text);
+}
+.vr-reg-card.active .vr-reg-jp {
+  color: var(--vr-color, var(--cyan));
+}
+.vr-reg-en {
+  font-size: 0.65rem;
+  color: var(--dim);
+}
+
+/* Harmonic richness bar */
+.vr-richness-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.75rem;
+}
+.vr-richness-label { color: var(--muted); white-space: nowrap; }
+.vr-richness-track {
+  position: relative;
+  flex: 1;
+  height: 0.55rem;
+  background: var(--bg3);
+  border-radius: 99px;
+  overflow: hidden;
+}
+.vr-richness-bar {
+  position: absolute;
+  left: 0; top: 0; height: 100%;
+  background: linear-gradient(90deg, #38bdf8 0%, #a855f7 40%, #f97316 75%);
+  border-radius: 99px;
+  transition: width .15s ease;
+}
+/* zone markers (decorative, positioned absolute over bar) */
+.vr-richness-zone {
+  position: absolute;
+  top: 0; height: 100%; width: 2px; background: rgba(0,0,0,.4);
+}
+.vr-zone-falsetto { left: 28%; }
+.vr-zone-mix      { left: 55%; }
+.vr-zone-chest    { left: 72%; }
+
+.vr-richness-val { color: var(--muted); min-width: 2.8rem; text-align: right; }
+
+.vr-live-info {
+  font-size: 0.78rem;
+  color: var(--dim);
+  text-align: center;
+}
+
+/* Mode tabs */
+.vr-mode-tabs {
+  display: flex;
+  gap: 0.4rem;
+  background: var(--bg2);
+  border-radius: 0.4rem;
+  padding: 0.2rem;
+  width: fit-content;
+}
+.vr-mode-btn {
+  padding: 0.3rem 1rem;
+  border: none;
+  border-radius: 0.3rem;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background .15s, color .15s;
+}
+.vr-mode-btn.active {
+  background: var(--bg3);
+  color: var(--text);
+}
+
+/* Controls */
+.vr-controls { display: flex; gap: 0.5rem; }
+
+.vr-btn {
+  padding: 0.45rem 1.1rem;
+  border-radius: 0.4rem;
+  border: 1px solid var(--border);
+  background: var(--bg2);
+  color: var(--text);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background .15s, border-color .15s;
+}
+.vr-btn:hover { background: var(--bg3); }
+.vr-btn.vr-start { background: linear-gradient(135deg, #00c6ff22, #a855f722); border-color: var(--cyan); color: var(--cyan); }
+.vr-btn.vr-stop  { border-color: var(--red); color: var(--red); }
+.vr-btn.vr-stop:hover { background: rgba(248,113,113,.1); }
+.vr-btn.vr-stop-practice { padding: 0.3rem 0.7rem; font-size: 0.78rem; border-color: var(--dim); color: var(--muted); }
+.vr-btn.vr-start-practice {
+  align-self: flex-start;
+  background: linear-gradient(135deg, transparent, rgba(255,255,255,.04));
+  font-size: 0.9rem;
+}
+.vr-btn.vr-retry-btn { margin-top: 0.5rem; }
+
+.vr-error {
+  padding: 0.5rem 0.75rem;
+  background: rgba(248,113,113,.12);
+  border: 1px solid #f87171;
+  border-radius: 0.4rem;
+  color: #f87171;
+  font-size: 0.85rem;
+}
+
+/* Guide cards */
+.vr-guide {
+  border-left: 3px solid var(--border);
+  padding: 0.6rem 0.75rem;
+  border-radius: 0 0.4rem 0.4rem 0;
+  background: var(--bg2);
+}
+.vr-free-guides { display: flex; flex-direction: column; gap: 0.5rem; }
+.vr-guide-name { font-size: 0.9rem; font-weight: 700; margin-bottom: 0.2rem; }
+.vr-guide-desc { font-size: 0.82rem; color: var(--muted); line-height: 1.5; }
+.vr-guide-tips { font-size: 0.78rem; color: var(--dim); margin-top: 0.3rem; }
+
+/* Target selector */
+.vr-target-select {
+  display: flex;
+  gap: 0.5rem;
+}
+.vr-target-btn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.15rem;
+  padding: 0.55rem 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  background: var(--bg2);
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.82rem;
+  transition: border-color .15s, color .15s, background .15s;
+}
+.vr-target-btn:hover { background: var(--bg3); }
+.vr-target-btn.selected { background: var(--bg3); font-weight: 700; }
+.vr-target-jp { font-size: 1rem; font-weight: 700; }
+.vr-target-en { font-size: 0.6rem; }
+
+.vr-muted { color: var(--muted); font-size: 0.82rem; }
+.vr-start-hint { padding: 0.5rem 0; }
+
+/* Practice panel */
+.vr-practice-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  background: var(--bg2);
+  border-radius: 0.5rem;
+  border: 1px solid var(--border);
+}
+.vr-practice-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+.vr-practice-target { font-size: 0.9rem; font-weight: 700; flex: 1; }
+.vr-practice-progress { font-size: 0.78rem; color: var(--muted); }
+
+.vr-practice-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.5rem 0;
+}
+.vr-practice-note {
+  font-size: 2.8rem;
+  font-weight: 900;
+  line-height: 1;
+  text-shadow: 0 0 20px currentColor;
+}
+.vr-step-msg { font-size: 0.85rem; color: var(--muted); }
+.vr-no-voice { font-size: 0.82rem; color: var(--yellow); }
+
+.vr-detected-badge {
+  font-size: 1.1rem;
+  font-weight: 700;
+  padding: 0.25rem 0.75rem;
+  border-radius: 99px;
+  background: rgba(255,255,255,.06);
+  border: 1px solid currentColor;
+}
+
+/* Result step */
+.vr-result-step { animation: vr-result-pop .3s ease; }
+@keyframes vr-result-pop {
+  0%   { transform: scale(.85); opacity: .4; }
+  60%  { transform: scale(1.06); }
+  100% { transform: scale(1);  opacity: 1; }
+}
+.vr-hit .vr-result-icon  { font-size: 2.5rem; color: var(--green); }
+.vr-miss .vr-result-icon { font-size: 2.5rem; color: var(--red); }
+.vr-result-label { font-size: 0.9rem; color: var(--muted); }
+
+/* Results summary */
+.vr-results {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  padding: 0.75rem;
+  background: var(--bg2);
+  border-radius: 0.5rem;
+  border: 1px solid var(--border);
+}
+.vr-results-header { font-size: 0.82rem; color: var(--muted); font-weight: 600; }
+.vr-score-big { font-size: 2rem; font-weight: 900; }
+.vr-score-pct { font-size: 1rem; font-weight: 400; color: var(--muted); }
+
+.vr-result-rows { display: flex; flex-direction: column; gap: 0.3rem; }
+.vr-result-row {
+  display: grid;
+  grid-template-columns: 2rem 3.5rem 1rem 3.5rem 1.5rem;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.82rem;
+  padding: 0.2rem 0;
+  border-bottom: 1px solid rgba(255,255,255,.04);
+}
+.vr-rr-note   { font-family: monospace; color: var(--dim); }
+.vr-rr-target { font-weight: 700; }
+.vr-rr-arrow  { color: var(--dim); text-align: center; }
+.vr-rr-detected { font-weight: 600; }
+.vr-rr-hit    { color: var(--green); font-weight: 700; text-align: center; }
+.vr-rr-miss   { color: var(--red);   font-weight: 700; text-align: center; }
