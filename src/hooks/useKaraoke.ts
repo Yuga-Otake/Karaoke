@@ -170,7 +170,9 @@ export function useKaraoke() {
 
           if (freq) {
             if (attackMs === null) attackMs = Date.now() - t0
-            cents      = Math.log2(freq / targetFreq) * 1200  // signed, relative to target
+            const rawCents = Math.log2(freq / targetFreq) * 1200
+            // Octave equivalence: same note in any octave scores as well as unison
+            cents      = ((rawCents % 1200) + 1800) % 1200 - 600
             pitchScore = Math.max(0, 100 - Math.abs(cents) * 1.5)
             resonance  = analyzeResonance(freqBuf, freq, ctx.sampleRate, 4096).resonanceScore
           }
