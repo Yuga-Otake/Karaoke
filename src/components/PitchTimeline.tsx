@@ -13,7 +13,7 @@ interface Props {
 // Y-axis: log-frequency from MIDI 36 (C2) to MIDI 84 (C6)
 const MIN_MIDI = 36
 const MAX_MIDI = 84
-const LABEL_W  = 38   // px reserved for note labels
+const LABEL_W  = 48   // px reserved for note labels
 
 function midiToFreq(m: number) { return 440 * Math.pow(2, (m - 69) / 12) }
 const MIN_FREQ = midiToFreq(MIN_MIDI)
@@ -65,8 +65,8 @@ export function PitchTimeline({ samples, duration, playbackTime, lyricsChars, bp
       if (sf) {
         const octave = Math.floor(midi / 12) - 1
         const label = isC ? `ド${octave}` : sf[1]
-        ctx.fillStyle = isC ? '#4a7fa5' : '#2d4a6a'
-        ctx.font = '9px monospace'
+        ctx.fillStyle = isC ? '#7ab3d0' : '#4a7fa5'
+        ctx.font = '11px monospace'
         ctx.textAlign = 'right'
         ctx.fillText(label, LABEL_W - 3, y + 3)
       }

@@ -87,8 +87,8 @@ function PitchContourCanvas({
       if (sf) {
         const oct = Math.floor(m / 12) - 1
         const label = isC ? `ド${oct}` : sf[1]
-        ctx.fillStyle = isC ? 'rgba(255,255,255,0.5)' : 'rgba(255,255,255,0.25)'
-        ctx.font = '8px monospace'
+        ctx.fillStyle = isC ? 'rgba(255,255,255,0.75)' : 'rgba(255,255,255,0.5)'
+        ctx.font = '10px monospace'
         ctx.fillText(label, 4, y - 2)
       }
     }
