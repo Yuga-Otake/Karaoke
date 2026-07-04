@@ -1,8 +1,8 @@
 import { useState, useRef, useEffect } from 'react'
-import { useRecorder, Recording } from '../hooks/useRecorder'
+import { useRecorder, Recording, TimedSegment } from '../hooks/useRecorder'
 import { PitchTimeline } from './PitchTimeline'
 import { NoteHistogram } from './NoteHistogram'
-import { NOTE_NAMES_EN, NOTE_NAMES_JP } from '../utils/musicTheory'
+import { NOTE_NAMES_EN, NOTE_NAMES_JP, NOTE_COLORS } from '../utils/musicTheory'
 
 interface Props {
   recordings: Recording[]
@@ -41,11 +41,74 @@ function analyzeRecording(rec: Recording) {
   }
 }
 
+function computeLyricsChars(
+  recognizedText: string,
+  segments: TimedSegment[],
+  duration: number,
+): Array<{ char: string; time: number }> {
+  const chars = [...recognizedText]
+  if (chars.length === 0) return []
+
+  if (segments.length > 0) {
+    const result: Array<{ char: string; time: number }> = []
+    for (const seg of segments) {
+      const segChars = [...seg.text]
+      if (segChars.length === 0) continue
+      const segDur = seg.endTime - seg.startTime
+      segChars.forEach((ch, i) => {
+        const time = (seg.startTime + (segDur * (i + 0.5)) / segChars.length) / 1000
+        result.push({ char: ch, time })
+      })
+    }
+    return result
+  }
+
+  return chars.map((ch, i) => ({
+    char: ch,
+    time: duration * (i + 0.5) / chars.length,
+  }))
+}
+
+function LyricsMappingGrid({
+  recognizedText,
+  segments,
+  samples,
+  duration,
+}: {
+  recognizedText: string
+  segments: TimedSegment[]
+  samples: Recording['samples']
+  duration: number
+}) {
+  const charSlots = computeLyricsChars(recognizedText, segments, duration)
+
+  return (
+    <div className="rec-lyrics-grid">
+      {charSlots.map(({ char, time }, i) => {
+        const nearby = samples.filter(s => Math.abs(s.time - time) < 0.15 && s.noteInfo)
+        const noteInfo = nearby.length > 0 ? nearby[0].noteInfo! : null
+        const color = noteInfo ? NOTE_COLORS[noteInfo.noteIndex] : 'var(--text-muted)'
+        return (
+          <div key={i} className="rec-lyric-cell">
+            <div className="rlc-char">{char}</div>
+            <div className="rlc-note" style={{ color }}>
+              {noteInfo ? noteInfo.noteJP : '—'}
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+const BPM_OPTIONS = [60, 80, 100, 120, 140]
+
 export function RecordingTab({ recordings, onAddRecording, onDeleteRecording }: Props) {
   const { state, startRecording, stopRecording } = useRecorder(onAddRecording)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [playbackTime, setPlaybackTime] = useState(0)
   const [isPlaying, setIsPlaying]       = useState(false)
+  const [bpm, setBpm] = useState<number | null>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
 
   // Auto-select newest recording
@@ -160,13 +223,41 @@ export function RecordingTab({ recordings, onAddRecording, onDeleteRecording }: 
           </div>
 
           <div className="ra-section">
-            <div className="ra-title">ピッチタイムライン Pitch Timeline</div>
+            <div className="ra-title-row">
+              <span className="ra-title">ピッチタイムライン Pitch Timeline</span>
+              <div className="rec-bpm-row">
+                <span className="rec-bpm-label">BPM</span>
+                {BPM_OPTIONS.map(b => (
+                  <button
+                    key={b}
+                    className={`bpm-btn ${bpm === b ? 'active' : ''}`}
+                    onClick={() => setBpm(prev => prev === b ? null : b)}
+                  >{b}</button>
+                ))}
+              </div>
+            </div>
             <PitchTimeline
               samples={selected.samples}
               duration={selected.duration}
               playbackTime={playbackTime}
+              lyricsChars={selected.recognizedText
+                ? computeLyricsChars(selected.recognizedText, selected.recognizedSegments ?? [], selected.duration)
+                : undefined}
+              bpm={bpm}
             />
           </div>
+
+          {selected.recognizedText && (
+            <div className="ra-section">
+              <div className="ra-title">歌詞 → ドレミ Lyrics → Notes</div>
+              <LyricsMappingGrid
+                recognizedText={selected.recognizedText}
+                segments={selected.recognizedSegments ?? []}
+                samples={selected.samples}
+                duration={selected.duration}
+              />
+            </div>
+          )}
 
           <div className="ra-row">
             <div className="ra-col">

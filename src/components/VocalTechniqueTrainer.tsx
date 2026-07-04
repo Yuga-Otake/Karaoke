@@ -74,18 +74,22 @@ function PitchContourCanvas({
       }
     }
 
-    // Grid lines
+    // Grid lines with solfège labels
+    const SOLFEGE_VT: Array<[number, string]> = [[0,'ド'],[2,'レ'],[4,'ミ'],[7,'ソ'],[9,'ラ']]
     for (let m = MIDI_MIN; m <= MIDI_MAX; m++) {
       const y = midiToY(m)
-      const isC = m % 12 === 0
+      const noteIdx = ((m % 12) + 12) % 12
+      const isC = noteIdx === 0
       ctx.strokeStyle = isC ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.05)'
       ctx.lineWidth = isC ? 0.8 : 0.5
       ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke()
-      if (isC) {
+      const sf = SOLFEGE_VT.find(([idx]) => idx === noteIdx)
+      if (sf) {
         const oct = Math.floor(m / 12) - 1
-        ctx.fillStyle = 'rgba(255,255,255,0.4)'
-        ctx.font = '10px monospace'
-        ctx.fillText(`C${oct}`, 4, y - 3)
+        const label = isC ? `ド${oct}` : sf[1]
+        ctx.fillStyle = isC ? 'rgba(255,255,255,0.5)' : 'rgba(255,255,255,0.25)'
+        ctx.font = '8px monospace'
+        ctx.fillText(label, 4, y - 2)
       }
     }
 

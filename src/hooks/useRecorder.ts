@@ -8,6 +8,12 @@ export interface PitchSample {
   noteInfo: NoteInfo | null
 }
 
+export interface TimedSegment {
+  text: string
+  startTime: number  // ms from recording start
+  endTime: number    // ms from recording start
+}
+
 export interface Recording {
   id: string
   blob?: Blob
@@ -15,6 +21,8 @@ export interface Recording {
   duration: number        // seconds
   samples: PitchSample[]
   source?: 'recording' | 'expression'
+  recognizedText?: string
+  recognizedSegments?: TimedSegment[]
 }
 
 interface RecorderState {
@@ -39,6 +47,7 @@ export function useRecorder(onSave: (rec: Recording) => void) {
   const startTimeRef     = useRef<number>(0)
   const pitchIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const timerIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const recognitionRef   = useRef<{ recognition: any; segments: TimedSegment[] } | null>(null)
   const onSaveRef        = useRef(onSave)
   onSaveRef.current      = onSave
 
@@ -67,6 +76,28 @@ export function useRecorder(onSave: (rec: Recording) => void) {
       chunksRef.current = []
       samplesRef.current = []
       startTimeRef.current = Date.now()
+
+      // Speech recognition (Chrome/Edge; silently skipped on unsupported browsers)
+      const SR = (window as any).SpeechRecognition ?? (window as any).webkitSpeechRecognition
+      if (SR) {
+        const recognition = new SR()
+        recognition.continuous = true
+        recognition.interimResults = false
+        recognition.lang = 'ja-JP'
+        const segments: TimedSegment[] = []
+        let prevEnd = 0
+        recognition.onresult = (e: any) => {
+          for (let i = e.resultIndex; i < e.results.length; i++) {
+            if (e.results[i].isFinal) {
+              const endTime = Date.now() - startTimeRef.current
+              segments.push({ text: e.results[i][0].transcript, startTime: prevEnd, endTime })
+              prevEnd = endTime
+            }
+          }
+        }
+        recognition.onerror = () => {}
+        try { recognition.start(); recognitionRef.current = { recognition, segments } } catch { /* skip */ }
+      }
 
       recorder.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data) }
       recorder.start(200)
@@ -105,6 +136,12 @@ export function useRecorder(onSave: (rec: Recording) => void) {
     const samples  = [...samplesRef.current]
 
     recorder.onstop = () => {
+      recognitionRef.current?.recognition.stop()
+      const segs = recognitionRef.current?.segments ?? []
+      const recognizedText = segs.length > 0 ? segs.map(s => s.text).join('') : undefined
+      const recognizedSegments = segs.length > 0 ? segs : undefined
+      recognitionRef.current = null
+
       const blob = new Blob(chunksRef.current, { type: chunksRef.current[0]?.type ?? 'audio/webm' })
       const recording: Recording = {
         id: Date.now().toString(),
@@ -113,6 +150,8 @@ export function useRecorder(onSave: (rec: Recording) => void) {
         duration,
         samples,
         source: 'recording',
+        recognizedText,
+        recognizedSegments,
       }
       setState(prev => ({ ...prev, isRecording: false, elapsed: 0, error: null }))
       onSaveRef.current(recording)
