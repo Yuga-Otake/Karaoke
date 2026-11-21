@@ -15,12 +15,14 @@ import { KaraokePractice } from './components/KaraokePractice'
 import { VocalTechniqueTrainer } from './components/VocalTechniqueTrainer'
 import { RangeCheck } from './components/RangeCheck'
 import { VoiceRegisterTrainer } from './components/VoiceRegisterTrainer'
+import { VoiceTraining } from './components/VoiceTraining'
 import './App.css'
 
-type Tab = 'analysis' | 'absolute' | 'relative' | 'scale' | 'recording' | 'range' | 'karaoke' | 'expression' | 'register'
+type Tab = 'analysis' | 'training' | 'absolute' | 'relative' | 'scale' | 'recording' | 'range' | 'karaoke' | 'expression' | 'register'
 
 const TABS: { id: Tab; label: string; labelJP: string }[] = [
   { id: 'analysis',   label: 'Analysis',       labelJP: '分析'    },
+  { id: 'training',   label: 'Voice Training', labelJP: '🏋 ボイトレ' },
   { id: 'absolute',   label: 'Absolute Pitch', labelJP: '絶対音感'  },
   { id: 'relative',   label: 'Relative Pitch', labelJP: '相対音感'  },
   { id: 'scale',      label: 'Scale',          labelJP: '音階'    },
@@ -157,6 +159,15 @@ export default function App() {
           </div>
         )}
 
+        {activeTab === 'training' && (
+          <div className="tab-pane">
+            <section className="card">
+              <div className="card-title">ボイストレーニング Daily Voice Training</div>
+              <VoiceTraining />
+            </section>
+          </div>
+        )}
+
         {activeTab === 'absolute' && (
           <div className="tab-pane">
             <section className="card">
@@ -246,6 +257,7 @@ export default function App() {
             <div className="start-icon">🎙</div>
             <h2>音感トレーニングへようこそ</h2>
             <ul className="feature-list">
+              <li>🏋 <strong>ボイトレ</strong> — 5トーン・アルペジオ等のスケール練習、ロングトーン、練習記録</li>
               <li>🎵 <strong>ドレミ表示</strong> — 固定ド・移動ドの両方をリアルタイム表示</li>
               <li>🎯 <strong>絶対音感</strong> — 音名・周波数・セント偏差</li>
               <li>↕ <strong>相対音感</strong> — 音程・インターバルの練習</li>
@@ -258,7 +270,10 @@ export default function App() {
             <button className="start-btn" onClick={start}>
               🎤 マイクを起動して始める
             </button>
-            <p className="start-note">録音・カラオケ・表現タブはマイク不要で開けます</p>
+            <button className="start-btn secondary" onClick={() => setActiveTab('training')}>
+              🏋 ボイトレを始める
+            </button>
+            <p className="start-note">ボイトレ・録音・カラオケ・表現タブはマイク不要で開けます</p>
           </div>
         </div>
       )}
