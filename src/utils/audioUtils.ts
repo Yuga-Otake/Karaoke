@@ -19,6 +19,7 @@ export function playBeep(ctx: AudioContext, midi: number, durationSec = 0.45) {
 /** Soft piano-like guide tone scheduled at an exact AudioContext time. */
 export function scheduleTone(
   ctx: AudioContext, midi: number, when: number, durationSec: number, volume = 0.5,
+  glidePath?: { t: number; midi: number }[],   // absolute ctx times: slide the pitch through these points
 ) {
   const freq = midiToFrequency(midi)
   const out = ctx.createGain()
@@ -38,7 +39,10 @@ export function scheduleTone(
     const osc = ctx.createOscillator()
     const og = ctx.createGain()
     osc.type = type
-    osc.frequency.value = freq * mult
+    osc.frequency.setValueAtTime(freq * mult, when)
+    for (const pt of glidePath ?? []) {
+      osc.frequency.exponentialRampToValueAtTime(midiToFrequency(pt.midi) * mult, pt.t)
+    }
     og.gain.value = g
     osc.connect(og)
     og.connect(out)

@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef, useMemo, MutableRefObject } from 'react'
-import { useWarmup, WarmupLive, WarmupMode, RepResult, WarmupState } from '../hooks/useWarmup'
+import { useWarmup, WarmupLive, WarmupMode, RepResult, WarmupState, targetAt } from '../hooks/useWarmup'
+import { useBreath, BreathLive, BreathResult } from '../hooks/useBreath'
+import { BUILD_ID } from '../utils/autoUpdate'
 import { useLongTone, LongToneLive, LongToneResult } from '../hooks/useLongTone'
 import {
   PATTERNS, ExercisePattern, patternSpan, stepLabel, midiName,
@@ -8,7 +10,7 @@ import {
 } from '../utils/vocalExercises'
 import { gradeOf } from '../utils/scoring'
 
-type Sub = 'menu' | 'warmup' | 'longtone'
+type Sub = 'menu' | 'warmup' | 'longtone' | 'breath'
 
 const GRADE_COLOR: Record<string, string> = {
   S: '#fbbf24', A: '#4ade80', B: '#00e5ff', C: '#facc15', D: '#f97316', F: '#f87171',
@@ -91,7 +93,7 @@ function WarmupCanvas({ liveRef, active }: { liveRef: MutableRefObject<WarmupLiv
       g.fillText('▶ スタートを押すと、ここにお手本と自分の声が表示されます', w / 2, h / 2)
       return
     }
-    const mids = targets.map(t => t.midi)
+    const mids = targets.flatMap(t => [t.midi, t.endMidi])
     const lo = Math.min(...mids) - 3, hi = Math.max(...mids) + 3
     const padL = 34
     const x = (t: number) => padL + (t / repLength) * (w - padL - 6)
@@ -119,11 +121,20 @@ function WarmupCanvas({ liveRef, active }: { liveRef: MutableRefObject<WarmupLiv
         ? (playing ? 'rgba(0,229,255,.55)' : 'rgba(0,229,255,.22)')
         : (playing ? 'rgba(168,85,247,.55)' : 'rgba(168,85,247,.18)')
       g.beginPath()
-      g.roundRect(x(t.start) + 1, y(t.midi) - bh / 2, x(t.end) - x(t.start) - 2, bh, 4)
+      if (t.endMidi === t.midi) {
+        g.roundRect(x(t.start) + 1, y(t.midi) - bh / 2, x(t.end) - x(t.start) - 2, bh, 4)
+      } else {
+        // glide: sloped band
+        g.moveTo(x(t.start), y(t.midi) - bh / 2)
+        g.lineTo(x(t.end), y(t.endMidi) - bh / 2)
+        g.lineTo(x(t.end), y(t.endMidi) + bh / 2)
+        g.lineTo(x(t.start), y(t.midi) + bh / 2)
+        g.closePath()
+      }
       g.fill()
       g.fillStyle = t.sing ? '#cffafe' : '#e9d5ff'
       g.font = 'bold 11px sans-serif'; g.textAlign = 'left'
-      g.fillText(stepLabel(t.step), x(t.start) + 4, y(t.midi) - bh / 2 - 3)
+      g.fillText(t.label, x(t.start) + 4, y(t.midi) - bh / 2 - 3)
     }
 
     // Voice trace — folded to the octave of the target for readability
@@ -136,11 +147,11 @@ function WarmupCanvas({ liveRef, active }: { liveRef: MutableRefObject<WarmupLiv
     let prev: { px: number; py: number } | null = null
     for (const f of frames) {
       if (f.midi === null) { prev = null; continue }
-      const tg = nearest(f.t)
+      const target = targetAt(nearest(f.t), f.t)
       let m = f.midi
-      while (m - tg.midi > 6) m -= 12
-      while (tg.midi - m > 6) m += 12
-      const dev = Math.abs(m - tg.midi) * 100
+      while (m - target > 6) m -= 12
+      while (target - m > 6) m += 12
+      const dev = Math.abs(m - target) * 100
       const px = x(f.t), py = y(m)
       g.strokeStyle = dev <= 30 ? '#4ade80' : dev <= 60 ? '#facc15' : '#f87171'
       if (prev && px - prev.px < 12) {
@@ -186,12 +197,21 @@ function warmupTips(reps: RepResult[], pattern: ExercisePattern): string[] {
   // Top-note tendency
   const span = patternSpan(pattern)
   const tops = reps.flatMap(r => r.notes.filter(n => n.step === span && n.cents !== null))
-  if (tops.length >= 2) {
+  if (tops.length >= 2 && !pattern.glide) {
     const tAvg = tops.reduce((a, n) => a + (n.cents as number), 0) / tops.length
     if (tAvg < -20) tips.push(`いちばん上の音（${stepLabel(span)}）が平均 ${Math.round(tAvg)}¢ 届いていません。跳躍の前に息を準備し、喉を上げずに頭の後ろへ響かせて。`)
   }
 
   const missed = reps.flatMap(r => r.notes).filter(n => n.score < 20).length
+  if (pattern.staccato) {
+    const d = reps.map(r => r.detach ?? 0)
+    const avgD = d.reduce((a, x) => a + x, 0) / (d.length || 1)
+    if (avgD < 60) tips.push(`音と音がつながっています（切れ ${Math.round(avgD)}%）。一音ごとにお腹で「ハッ」と息を止め、喉は開けたまま。`)
+    else tips.push(`音の切れは良好です（切れ ${Math.round(avgD)}%）。`)
+  }
+  if (pattern.glide) {
+    tips.push('サイレンは段差（音がカクッと飛ぶ所）がないかグラフで確認を。段差の位置が換声点です。')
+  }
   if (missed > reps.length) tips.push('声が検出されない音が多めです。マイクに近づくか、もう少し声量を。')
   return tips
 }
@@ -199,13 +219,13 @@ function warmupTips(reps: RepResult[], pattern: ExercisePattern): string[] {
 function WarmupResults({ state, pattern }: { state: WarmupState; pattern: ExercisePattern }) {
   const { reps } = state
   const done = state.phase === 'complete'
-  const steps = pattern.steps
-
   // Average signed cents per position in the pattern
-  const perStep = steps.map((s, i) => {
+  const perStep = (reps[0]?.notes ?? []).map((n, i) => {
     const cs = reps.map(r => r.notes[i]?.cents).filter((c): c is number => c !== null && c !== undefined)
-    return { step: s, cents: cs.length ? Math.round(cs.reduce((a, c) => a + c, 0) / cs.length) : null }
+    return { label: n.label, cents: cs.length ? Math.round(cs.reduce((a, c) => a + c, 0) / cs.length) : null }
   })
+  const detachAvg = pattern.staccato && reps.length
+    ? Math.round(reps.reduce((a, r) => a + (r.detach ?? 0), 0) / reps.length) : null
 
   return (
     <div className="vt-results">
@@ -247,12 +267,19 @@ function WarmupResults({ state, pattern }: { state: WarmupState; pattern: Exerci
                     <div className="vt-step-dot" style={{ bottom: `calc(${50 + off}% - 5px)`, background: color }} />
                   </div>
                   <span className="vt-step-val" style={{ color }}>{c === null ? '–' : `${c > 0 ? '+' : ''}${c}`}</span>
-                  <span className="vt-step-lbl">{stepLabel(p.step)}</span>
+                  <span className="vt-step-lbl">{p.label}</span>
                 </div>
               )
             })}
           </div>
           <div className="vt-legend">上 = 高すぎ / 下 = 低すぎ（単位: セント, ±50¢ = 半音の半分）</div>
+          {detachAvg !== null && (
+            <div className="vt-metric">
+              <span className="vt-metric-k">音の切れ</span>
+              <div className="lp-bar-track"><div className="lp-bar-fill" style={{ width: `${detachAvg}%`, background: scoreColor(detachAvg) }} /></div>
+              <span className="vt-metric-v">{detachAvg}%</span>
+            </div>
+          )}
         </>
       )}
 
@@ -508,17 +535,156 @@ function LongTonePanel({ range, setRange }: { range: VoiceRange; setRange: (r: V
   )
 }
 
+// ─── Breath ──────────────────────────────────────────────────────────────────
+
+function BreathCanvas({ liveRef, active }: { liveRef: MutableRefObject<BreathLive>; active: boolean }) {
+  const ref = useAnimatedCanvas((g, w, h) => {
+    const { frames, start, ctx, targetSec, thresholdDb } = liveRef.current
+    const padL = 34
+    const elapsed = active && ctx && start !== null ? ctx.currentTime - start
+      : frames.length ? frames[frames.length - 1].t : 0
+    const span = Math.max(targetSec, elapsed + 1)
+    const x = (t: number) => padL + (t / span) * (w - padL - 6)
+    const yd = (db: number) => h - 6 - ((Math.max(-70, Math.min(-10, db)) + 70) / 60) * (h - 12)
+
+    g.strokeStyle = '#1e293b'; g.lineWidth = 1
+    g.fillStyle = '#64748b'; g.font = '10px sans-serif'; g.textAlign = 'right'
+    for (const db of [-60, -40, -20]) {
+      g.beginPath(); g.moveTo(padL, yd(db)); g.lineTo(w, yd(db)); g.stroke()
+      g.fillText(`${db}dB`, padL - 4, yd(db) + 3)
+    }
+    // Threshold
+    g.strokeStyle = 'rgba(148,163,184,.4)'; g.setLineDash([3, 3])
+    g.beginPath(); g.moveTo(padL, yd(thresholdDb)); g.lineTo(w, yd(thresholdDb)); g.stroke()
+    // Target
+    g.strokeStyle = 'rgba(250,204,21,.6)'; g.setLineDash([4, 4])
+    g.beginPath(); g.moveTo(x(targetSec), 0); g.lineTo(x(targetSec), h); g.stroke()
+    g.setLineDash([])
+    g.fillStyle = '#facc15'; g.textAlign = 'left'
+    g.fillText(`目標 ${targetSec}秒`, Math.min(x(targetSec) + 3, w - 56), 12)
+
+    if (frames.length) {
+      g.beginPath()
+      g.moveTo(x(frames[0].t), h)
+      frames.forEach(f => g.lineTo(x(f.t), yd(f.db)))
+      g.lineTo(x(frames[frames.length - 1].t), h)
+      g.closePath()
+      const grad = g.createLinearGradient(0, 0, 0, h)
+      grad.addColorStop(0, 'rgba(0,229,255,.55)'); grad.addColorStop(1, 'rgba(168,85,247,.1)')
+      g.fillStyle = grad; g.fill()
+      g.fillStyle = '#e2e8f0'; g.font = 'bold 22px sans-serif'; g.textAlign = 'right'
+      g.fillText(`${elapsed.toFixed(1)}秒`, w - 10, 34)
+    } else {
+      g.fillStyle = '#475569'; g.font = '13px sans-serif'; g.textAlign = 'center'
+      g.fillText(active ? '' : '▶ スタートで、吸う → 吐くのガイドが始まります', w / 2, h / 2)
+    }
+  }, 180)
+  return <canvas ref={ref} className="vt-canvas" style={{ height: 180 }} />
+}
+
+function breathTips(r: BreathResult, targetSec: number): string[] {
+  const tips: string[] = []
+  if (r.duration < targetSec * 0.6) tips.push('吐く息が早く尽きています。最初に勢いよく出しすぎず、細く一定に。お腹がゆっくり凹んでいくのを感じながら。')
+  if (r.volumeSd > 4) tips.push('息の強さが波打っています。歯の隙間から「スー」と、同じ音量を保つ意識で。')
+  if (tips.length === 0) tips.push('一定で長いブレスです！目標秒数を伸ばしてみましょう。')
+  return tips
+}
+
+function BreathPanel() {
+  const { state, liveRef, start, stop } = useBreath()
+  const [targetSec, setTargetSec] = useState(20)
+  const running = state.phase !== 'idle' && state.phase !== 'complete'
+  const r = state.result
+  const best = useMemo(() => {
+    const l = loadLog().filter(e => e.kind === 'breath')
+    return l.length ? Math.max(...l.map(e => Number(e.detail?.duration ?? 0))) : 0
+  }, [state.phase])
+
+  return (
+    <div className="vt-panel">
+      <div className="vt-hint">
+        💬 発声の土台になる呼吸の練習です。4秒で鼻から吸い（肩を上げずお腹・背中をふくらませる）、
+        歯の隙間から「スー」と細く一定に吐き続けます。マイクの近くで行ってください。
+      </div>
+      <div className="kp-settings">
+        <label className="kp-setting">
+          <span>目標</span>
+          <select value={targetSec} disabled={running} onChange={e => setTargetSec(Number(e.target.value))}>
+            {[10, 15, 20, 30, 45, 60].map(s => <option key={s} value={s}>{s} 秒</option>)}
+          </select>
+        </label>
+        {best > 0 && <div className="vt-plan">自己ベスト {best} 秒</div>}
+        {!running
+          ? <button className="kp-start-btn" onClick={() => start(targetSec)}>
+              {state.phase === 'complete' ? '↺ もう一度' : '▶ スタート'}
+            </button>
+          : <button className="kp-stop-btn" onClick={stop}>■ 中止</button>}
+      </div>
+      {state.error && <div className="kp-error">⚠ {state.error}</div>}
+      {running && (
+        <div className={`vt-breath-cue ${state.phase}`}>
+          {state.phase === 'calibrate' && <>🤫 静かに…（周りの音を測定中）</>}
+          {state.phase === 'inhale' && <>⬆ 吸って… <b>{state.countdown}</b></>}
+          {state.phase === 'exhale' && <>⬇ 「スー」と吐いて…（息が尽きたら終了）</>}
+        </div>
+      )}
+      <BreathCanvas liveRef={liveRef} active={running} />
+      {r && (
+        <div className="vt-results">
+          <div className="vt-score-head">
+            <span className="vt-score-big" style={{ color: scoreColor(r.total) }}>{r.total}</span>
+            <span className="vt-score-unit">点</span>
+            <span className="vt-grade" style={{ color: scoreColor(r.total), borderColor: scoreColor(r.total) }}>{gradeOf(r.total)}</span>
+            {r.duration >= best && r.duration > 0 && <span className="vt-best">🏆 自己ベスト！</span>}
+          </div>
+          <div className="vt-metrics">
+            {[
+              { k: '持続時間', v: `${r.duration} 秒`, s: r.scores.duration },
+              { k: '息の安定', v: `揺れ ${r.volumeSd}dB`, s: r.scores.steadiness },
+            ].map(m => (
+              <div key={m.k} className="vt-metric">
+                <span className="vt-metric-k">{m.k}</span>
+                <div className="lp-bar-track"><div className="lp-bar-fill" style={{ width: `${m.s}%`, background: scoreColor(m.s) }} /></div>
+                <span className="vt-metric-v">{m.v}</span>
+              </div>
+            ))}
+          </div>
+          <ul className="vt-tips">
+            {breathTips(r, targetSec).map((t, i) => <li key={i}>💡 {t}</li>)}
+          </ul>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Menu & progress ─────────────────────────────────────────────────────────
 
-const DAILY_MENU: { id: string; sub: Sub; pattern?: string; label: string; desc: string }[] = [
-  { id: 'longtone', sub: 'longtone', label: 'ロングトーン', desc: '息の支えを作る（1〜2回）' },
-  { id: 'three',    sub: 'warmup', pattern: 'three',    label: '3トーン',    desc: 'ハミングで軽く声を起こす' },
-  { id: 'five',     sub: 'warmup', pattern: 'five',     label: '5トーン',    desc: 'リップロール →「マ」で' },
-  { id: 'arpeggio', sub: 'warmup', pattern: 'arpeggio', label: 'アルペジオ', desc: '音の跳躍と響きの位置' },
-  { id: 'octave',   sub: 'warmup', pattern: 'octave',   label: 'オクターブ跳躍', desc: '換声点をなめらかに' },
+type MenuItem = { id: string; sub: Sub; pattern?: string; label: string; desc: string }
+
+const ITEMS: Record<string, MenuItem> = {
+  breath:   { id: 'breath',   sub: 'breath',   label: 'ロングブレス', desc: '「スー」で呼吸の支えを作る' },
+  longtone: { id: 'longtone', sub: 'longtone', label: 'ロングトーン', desc: '同じ高さでまっすぐ伸ばす' },
+  three:    { id: 'three',    sub: 'warmup', pattern: 'three',    label: '3トーン',    desc: 'ハミングで軽く声を起こす' },
+  five:     { id: 'five',     sub: 'warmup', pattern: 'five',     label: '5トーン',    desc: 'リップロール →「マ」で' },
+  fifth:    { id: 'fifth',    sub: 'warmup', pattern: 'fifth',    label: '5度跳躍',    desc: '跳躍の音程を正確に' },
+  staccato: { id: 'staccato', sub: 'warmup', pattern: 'staccato', label: 'スタッカート', desc: '横隔膜で短く切る' },
+  arpeggio: { id: 'arpeggio', sub: 'warmup', pattern: 'arpeggio', label: 'アルペジオ', desc: '音の跳躍と響きの位置' },
+  siren:    { id: 'siren',    sub: 'warmup', pattern: 'siren',    label: 'サイレン',   desc: '段差なく滑らかに上下' },
+  octave:   { id: 'octave',   sub: 'warmup', pattern: 'octave',   label: 'オクターブ跳躍', desc: '換声点をなめらかに' },
+  nine:     { id: 'nine',     sub: 'warmup', pattern: 'nine',     label: '9トーン',    desc: '一息で広い音域を' },
+}
+
+const COURSES: { id: string; label: string; time: string; items: string[] }[] = [
+  { id: 'basic', label: '基本',          time: '約10分', items: ['breath', 'longtone', 'three', 'five', 'arpeggio'] },
+  { id: 'full',  label: 'しっかり',      time: '約20分', items: ['breath', 'longtone', 'three', 'five', 'staccato', 'arpeggio', 'siren', 'octave'] },
+  { id: 'high',  label: '高音・換声点',  time: '約12分', items: ['breath', 'three', 'siren', 'octave', 'nine'] },
+  { id: 'pitch', label: '音程強化',      time: '約12分', items: ['longtone', 'five', 'fifth', 'arpeggio', 'staccato'] },
+  { id: 'quick', label: 'クイック',      time: '約5分',  items: ['breath', 'five', 'siren'] },
 ]
 
 const EXERCISE_NAME: Record<string, string> = {
+  breath: 'ロングブレス',
   longtone: 'ロングトーン',
   ...Object.fromEntries(PATTERNS.map(p => [p.id, p.name])),
 }
@@ -528,6 +694,16 @@ function MenuPanel({ onGo }: { onGo: (sub: Sub, pattern?: string) => void }) {
   const today = dayKey(new Date())
   const todays = log.filter(e => dayKey(new Date(e.date)) === today)
   const doneToday = new Set(todays.map(e => e.exercise))
+  const [courseId, setCourseId] = useState(() => {
+    try { return localStorage.getItem('vtCourse') ?? 'basic' } catch { return 'basic' }
+  })
+  const course = COURSES.find(c => c.id === courseId) ?? COURSES[0]
+  const menu = course.items.map(id => ITEMS[id])
+  const pickCourse = (id: string) => {
+    setCourseId(id)
+    try { localStorage.setItem('vtCourse', id) } catch { /* ignore */ }
+  }
+  const menuDone = menu.filter(m => doneToday.has(m.id)).length
   const streak = streakDays(log)
   const todayMin = Math.ceil(todays.reduce((a, e) => a + e.seconds, 0) / 60)
 
@@ -551,12 +727,19 @@ function MenuPanel({ onGo }: { onGo: (sub: Sub, pattern?: string) => void }) {
       <div className="vt-stats">
         <div className="vt-stat"><span className="vt-stat-v">🔥 {streak}</span><span className="vt-stat-k">連続日数</span></div>
         <div className="vt-stat"><span className="vt-stat-v">{todayMin}<small>分</small></span><span className="vt-stat-k">今日の練習</span></div>
-        <div className="vt-stat"><span className="vt-stat-v">{doneToday.size}<small>/{DAILY_MENU.length}</small></span><span className="vt-stat-k">メニュー達成</span></div>
+        <div className="vt-stat"><span className="vt-stat-v">{menuDone}<small>/{menu.length}</small></span><span className="vt-stat-k">メニュー達成</span></div>
       </div>
 
-      <div className="vt-sub-title">今日のメニュー（約10分）</div>
+      <div className="vt-sub-title">今日のメニュー（{course.time}）</div>
+      <div className="vt-range-presets">
+        {COURSES.map(c => (
+          <button key={c.id} className={`vt-chip ${c.id === course.id ? 'selected' : ''}`} onClick={() => pickCourse(c.id)}>
+            {c.label}
+          </button>
+        ))}
+      </div>
       <div className="vt-menu">
-        {DAILY_MENU.map((m, i) => (
+        {menu.map((m, i) => (
           <button key={m.id} className={`vt-menu-item ${doneToday.has(m.id) ? 'done' : ''}`} onClick={() => onGo(m.sub, m.pattern)}>
             <span className="vt-menu-num">{doneToday.has(m.id) ? '✓' : i + 1}</span>
             <span className="vt-menu-text">
@@ -625,14 +808,15 @@ export function VoiceTraining() {
   return (
     <div className="voice-training">
       <div className="vt-subnav">
-        {([['menu', '📋 メニュー・記録'], ['warmup', '🎼 スケール練習'], ['longtone', '〰 ロングトーン']] as const).map(([id, label]) => (
+        {([['menu', '📋 メニュー'], ['breath', '🌬 ブレス'], ['longtone', '〰 ロングトーン'], ['warmup', '🎼 スケール']] as const).map(([id, label]) => (
           <button key={id} className={`vt-subtab ${sub === id ? 'active' : ''}`} onClick={() => setSub(id)}>{label}</button>
         ))}
       </div>
       {sub === 'menu' && <MenuPanel onGo={(s, p) => { if (p) setPattern(p); setSub(s) }} />}
       {sub === 'warmup' && <WarmupPanel range={range} setRange={setRange} initialPattern={pattern} />}
       {sub === 'longtone' && <LongTonePanel range={range} setRange={setRange} />}
-      <div className="vt-footnote">✱ 声がかすれる・喉が痛いときは無理をせず休みましょう。イヤホンを使うと検出精度が上がります。</div>
+      {sub === 'breath' && <BreathPanel />}
+      <div className="vt-footnote">✱ 声がかすれる・喉が痛いときは無理をせず休みましょう。イヤホンを使うと検出精度が上がります。<span className="vt-version">ver {BUILD_ID}</span></div>
     </div>
   )
 }

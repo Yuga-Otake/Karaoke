@@ -2583,3 +2583,15 @@ button { font-family: inherit; cursor: pointer; }
   .vt-metric { grid-template-columns: 5.5rem 1fr 5rem; }
   .vt-trend { grid-template-columns: 5.5rem 1fr 2rem; }
 }
+
+.vt-chip.selected { background: rgba(0,229,255,.15); color: var(--cyan); border-color: var(--cyan); }
+.vt-version { float: right; opacity: .6; }
+.vt-breath-cue {
+  text-align: center; font-size: 1.15rem; font-weight: 700;
+  padding: 0.7rem; border-radius: 0.6rem;
+  background: rgba(255,255,255,.03); border: 1px solid var(--border);
+}
+.vt-breath-cue b { font-size: 1.8rem; margin-left: 0.4rem; color: var(--cyan); }
+.vt-breath-cue.inhale { border-color: rgba(0,229,255,.5); animation: vt-inhale 1s ease-in-out infinite alternate; }
+.vt-breath-cue.exhale { border-color: rgba(168,85,247,.5); color: #d8b4fe; }
+@keyframes vt-inhale { from { background: rgba(0,229,255,.03); } to { background: rgba(0,229,255,.14); } }
