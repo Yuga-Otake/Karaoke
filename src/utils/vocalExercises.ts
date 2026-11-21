@@ -7,9 +7,11 @@ export interface ExercisePattern {
   name: string
   solfa: string          // human-readable pattern
   steps: number[]        // semitones above the root
-  lengths?: number[]     // beats per note (default 1, last note 2)
+  lengths?: number[]     // beats per note (default 1, last note 2); for glides: beats per segment
   hint: string
   defaultBpm: number
+  staccato?: boolean     // short, detached notes
+  glide?: boolean        // slide continuously between steps (siren)
 }
 
 export const PATTERNS: ExercisePattern[] = [
@@ -39,6 +41,28 @@ export const PATTERNS: ExercisePattern[] = [
     defaultBpm: 84,
   },
   {
+    id: 'fifth', name: '5度跳躍', solfa: 'ド ソ ド ソ ド',
+    steps: [0, 7, 0, 7, 0],
+    hint: '音程の跳躍を正確に。ソを「狙って」当てる感覚を身につける。',
+    defaultBpm: 92,
+  },
+  {
+    id: 'staccato', name: 'スタッカート', solfa: 'ド・ミ・ソ・ド・ソ・ミ・ド',
+    steps: [0, 4, 7, 12, 7, 4, 0],
+    lengths: [1, 1, 1, 1, 1, 1, 1],
+    staccato: true,
+    hint: '「ハッ」「ホッ」とお腹（横隔膜）で短く切る。喉で止めないこと。',
+    defaultBpm: 100,
+  },
+  {
+    id: 'siren', name: 'サイレン', solfa: 'ド ↗ 上のド ↘ ド（なめらかに）',
+    steps: [0, 12, 0],
+    lengths: [4, 4],
+    glide: true,
+    hint: '「ウー」やリップロールで、段差なく滑らかに上下。換声点で声がひっくり返らないように。',
+    defaultBpm: 90,
+  },
+  {
     id: 'nine', name: '9トーン', solfa: 'ド〜レ(9度)〜ド',
     steps: [0, 2, 4, 5, 7, 9, 11, 12, 14, 12, 11, 9, 7, 5, 4, 2, 0],
     hint: '上級。1オクターブ以上を一息で。息配分を意識して。',
@@ -48,6 +72,7 @@ export const PATTERNS: ExercisePattern[] = [
 
 export function patternLengths(p: ExercisePattern): number[] {
   if (p.lengths) return p.lengths
+  if (p.glide) return p.steps.slice(1).map(() => 2)
   return p.steps.map((_, i) => (i === p.steps.length - 1 ? 2 : 1))
 }
 
@@ -124,8 +149,8 @@ export function foldCents(cents: number): number {
 
 export interface PracticeEntry {
   date: string            // ISO timestamp
-  kind: 'warmup' | 'longtone'
-  exercise: string        // pattern id or 'longtone'
+  kind: 'warmup' | 'longtone' | 'breath'
+  exercise: string        // pattern id, 'longtone' or 'breath'
   score: number
   seconds: number         // time spent
   detail?: Record<string, number | string>
