@@ -1,16 +1,19 @@
-import { useState, useEffect, useRef, useMemo, MutableRefObject } from 'react'
+import { useState, useEffect, useRef, useMemo, useCallback, MutableRefObject } from 'react'
 import { useWarmup, WarmupLive, WarmupMode, RepResult, WarmupState, targetAt } from '../hooks/useWarmup'
 import { useBreath, BreathLive, BreathResult } from '../hooks/useBreath'
 import { BUILD_ID } from '../utils/autoUpdate'
+import {
+  DAILY_STAGES, Stage, planWarmup, longToneMidi, adaptiveTargets, estimateMinutes,
+} from '../utils/dailyRoutine'
 import { useLongTone, LongToneLive, LongToneResult } from '../hooks/useLongTone'
 import {
   PATTERNS, ExercisePattern, patternSpan, stepLabel, midiName,
   VoiceRange, RANGE_PRESETS, loadRange, saveRange, loadRangeCheckResult, buildRoots,
-  loadLog, clearLog, PracticeEntry, dayKey, streakDays,
+  loadLog, clearLog, appendLog, PracticeEntry, dayKey, streakDays,
 } from '../utils/vocalExercises'
 import { gradeOf } from '../utils/scoring'
 
-type Sub = 'menu' | 'warmup' | 'longtone' | 'breath'
+type Sub = 'routine' | 'menu' | 'warmup' | 'longtone' | 'breath'
 
 const GRADE_COLOR: Record<string, string> = {
   S: '#fbbf24', A: '#4ade80', B: '#00e5ff', C: '#facc15', D: '#f97316', F: '#f87171',
@@ -292,12 +295,37 @@ function WarmupResults({ state, pattern }: { state: WarmupState; pattern: Exerci
   )
 }
 
-function WarmupPanel({ range, setRange, initialPattern }: {
+interface WarmupPreset { pattern: ExercisePattern; roots: number[]; bpm: number; mode: WarmupMode }
+
+/** Start once shortly after mount (timer survives React StrictMode's double effects). */
+function useAutoStart(enabled: boolean, fn: () => void) {
+  const fnRef = useRef(fn)
+  fnRef.current = fn
+  useEffect(() => {
+    if (!enabled) return
+    const id = setTimeout(() => fnRef.current(), 50)
+    return () => clearTimeout(id)
+  }, [enabled])
+}
+
+/** Report the final score once when an exercise completes. */
+function useOnDone(done: boolean, score: number, onDone?: (score: number) => void) {
+  const sent = useRef(false)
+  useEffect(() => {
+    if (done && !sent.current && onDone) { sent.current = true; onDone(score) }
+    if (!done) sent.current = false
+  }, [done, score, onDone])
+}
+
+function WarmupPanel({ range, setRange, initialPattern, preset, onDone }: {
   range: VoiceRange; setRange: (r: VoiceRange) => void; initialPattern: string
+  preset?: WarmupPreset; onDone?: (score: number) => void
 }) {
   const { state, liveRef, start, stop } = useWarmup()
   const [patternId, setPatternId] = useState(initialPattern)
-  const pattern = PATTERNS.find(p => p.id === patternId) ?? PATTERNS[1]
+  const pattern = preset?.pattern ?? PATTERNS.find(p => p.id === patternId) ?? PATTERNS[1]
+  useAutoStart(!!preset, () => preset && start(preset.pattern, preset.roots, preset.bpm, preset.mode))
+  useOnDone(state.phase === 'complete', state.sessionScore, onDone)
   const [bpm, setBpm] = useState(pattern.defaultBpm)
   const [mode, setMode] = useState<WarmupMode>('call')
   const [direction, setDirection] = useState<'up' | 'updown'>('updown')
@@ -311,6 +339,7 @@ function WarmupPanel({ range, setRange, initialPattern }: {
 
   return (
     <div className="vt-panel">
+      {!preset && <>
       <div className="vt-patterns">
         {PATTERNS.map(p => (
           <button key={p.id} disabled={running}
@@ -355,6 +384,7 @@ function WarmupPanel({ range, setRange, initialPattern }: {
           : <button className="kp-stop-btn" onClick={stop}>■ 停止</button>}
       </div>
       {tooNarrow && <div className="kp-error">音域がこのパターンには狭すぎます。音域を広げてください。</div>}
+      </>}
       {state.error && <div className="kp-error">⚠ {state.error}</div>}
 
       {running && (
@@ -445,10 +475,15 @@ function longToneTips(r: LongToneResult, targetSec: number): string[] {
   return tips
 }
 
-function LongTonePanel({ range, setRange }: { range: VoiceRange; setRange: (r: VoiceRange) => void }) {
+function LongTonePanel({ range, setRange, preset, onDone }: {
+  range: VoiceRange; setRange: (r: VoiceRange) => void
+  preset?: { midi: number; targetSec: number }; onDone?: (score: number) => void
+}) {
   const { state, liveRef, start, stop, finish } = useLongTone()
-  const [midi, setMidi] = useState(() => Math.round((range.lo + range.hi) / 2) - 2)
-  const [targetSec, setTargetSec] = useState(10)
+  const [midi, setMidi] = useState(() => preset?.midi ?? Math.round((range.lo + range.hi) / 2) - 2)
+  const [targetSec, setTargetSec] = useState(preset?.targetSec ?? 10)
+  useAutoStart(!!preset, () => preset && start(preset.midi, preset.targetSec))
+  useOnDone(state.phase === 'complete', state.result?.total ?? 0, onDone)
   const running = state.phase !== 'idle' && state.phase !== 'complete'
   const r = state.result
 
@@ -461,6 +496,10 @@ function LongTonePanel({ range, setRange }: { range: VoiceRange; setRange: (r: V
 
   return (
     <div className="vt-panel">
+      {preset && state.phase === 'sing' && (
+        <button className="kp-start-btn retry vt-finish" onClick={finish}>✓ 終了して採点</button>
+      )}
+      {!preset && <>
       <div className="vt-hint">
         💬 腹式呼吸で、同じ高さ・同じ大きさのまま声をまっすぐ伸ばす練習です。
         「ア」や「ウ」で、喉の力を抜いて。ビブラートは揺れとして数えません。
@@ -489,6 +528,7 @@ function LongTonePanel({ range, setRange }: { range: VoiceRange; setRange: (r: V
               <button className="kp-stop-btn" onClick={stop}>■ 中止</button>
             </>}
       </div>
+      </>}
       {state.error && <div className="kp-error">⚠ {state.error}</div>}
       {running && (
         <div className="vt-status">
@@ -590,9 +630,11 @@ function breathTips(r: BreathResult, targetSec: number): string[] {
   return tips
 }
 
-function BreathPanel() {
+function BreathPanel({ preset, onDone }: { preset?: { targetSec: number }; onDone?: (score: number) => void } = {}) {
   const { state, liveRef, start, stop } = useBreath()
-  const [targetSec, setTargetSec] = useState(20)
+  const [targetSec, setTargetSec] = useState(preset?.targetSec ?? 20)
+  useAutoStart(!!preset, () => preset && start(preset.targetSec))
+  useOnDone(state.phase === 'complete', state.result?.total ?? 0, onDone)
   const running = state.phase !== 'idle' && state.phase !== 'complete'
   const r = state.result
   const best = useMemo(() => {
@@ -602,6 +644,7 @@ function BreathPanel() {
 
   return (
     <div className="vt-panel">
+      {!preset && <>
       <div className="vt-hint">
         💬 発声の土台になる呼吸の練習です。4秒で鼻から吸い（肩を上げずお腹・背中をふくらませる）、
         歯の隙間から「スー」と細く一定に吐き続けます。マイクの近くで行ってください。
@@ -620,6 +663,7 @@ function BreathPanel() {
             </button>
           : <button className="kp-stop-btn" onClick={stop}>■ 中止</button>}
       </div>
+      </>}
       {state.error && <div className="kp-error">⚠ {state.error}</div>}
       {running && (
         <div className={`vt-breath-cue ${state.phase}`}>
@@ -658,6 +702,199 @@ function BreathPanel() {
   )
 }
 
+// ─── Daily 10-minute routine ─────────────────────────────────────────────────
+
+function DailyRoutine({ range, onExit }: { range: VoiceRange; onExit: () => void }) {
+  const [log] = useState(() => loadLog())
+  const [earphones, setEarphones] = useState(() => {
+    try { return localStorage.getItem('vtEarphones') === '1' } catch { return false }
+  })
+  const mode: WarmupMode = earphones ? 'together' : 'call'
+  const targets = useMemo(() => adaptiveTargets(log), [log])
+  const minutes = useMemo(() => estimateMinutes(range, mode, log), [range, mode, log])
+  const doneToday = log.some(e => e.exercise === 'daily10' && dayKey(new Date(e.date)) === dayKey(new Date()))
+  const lastRoutine = log.find(e => e.exercise === 'daily10')
+
+  const [idx, setIdx] = useState(-1)                 // -1 = intro, length = finished
+  const [phase, setPhase] = useState<'prep' | 'run' | 'done'>('prep')
+  const [count, setCount] = useState(3)
+  const [scores, setScores] = useState<(number | null)[]>([])
+  const [runKey, setRunKey] = useState(0)
+  const t0 = useRef(0)
+  const logged = useRef(false)
+  const stage = DAILY_STAGES[idx]
+  const finished = idx >= DAILY_STAGES.length
+
+  const setEar = (v: boolean) => {
+    setEarphones(v)
+    try { localStorage.setItem('vtEarphones', v ? '1' : '0') } catch { /* ignore */ }
+  }
+
+  const go = (i: number) => {
+    setIdx(i); setPhase('prep'); setCount(3); setRunKey(k => k + 1)
+  }
+
+  // 3-2-1 before each stage: time to read the tip and get ready
+  useEffect(() => {
+    if (idx < 0 || finished || phase !== 'prep') return
+    if (count <= 0) { setPhase('run'); return }
+    const id = setTimeout(() => setCount(c => c - 1), 1000)
+    return () => clearTimeout(id)
+  }, [idx, phase, count, finished])
+
+  const handleDone = useCallback((score: number) => {
+    setScores(prev => { const n = [...prev]; n[idx] = score; return n })
+    setPhase('done')
+  }, [idx])
+
+  const scored = scores.filter((x): x is number => typeof x === 'number')
+  const avg = scored.length ? Math.round(scored.reduce((a, b) => a + b, 0) / scored.length) : 0
+
+  useEffect(() => {
+    if (!finished || logged.current) return
+    logged.current = true
+    appendLog({
+      date: new Date().toISOString(), kind: 'routine', exercise: 'daily10',
+      score: avg, seconds: 0,   // stage time is already logged by each exercise
+      detail: { stages: scored.length, minutes: Math.round((Date.now() - t0.current) / 60000) },
+    })
+  }, [finished, avg, scored.length])
+
+  // ── Intro ──
+  if (idx < 0) {
+    return (
+      <div className="vt-panel">
+        <div className="vt-routine-hero">
+          <div className="vt-routine-hero-title">⭐ 今日の10分ボイトレ</div>
+          <div className="vt-routine-hero-sub">
+            毎日同じ順番で続けるのがいちばんの近道。呼吸 → 発声 → 音域 → 音程 → クールダウンの
+            基本レッスンの流れを、1タップずつ進めます。（目安 約{minutes}分）
+          </div>
+          {doneToday && <div className="vt-routine-done">✓ 今日はもう完了しています。もう一回やってもOK！</div>}
+        </div>
+        <ol className="vt-routine-list">
+          {DAILY_STAGES.map((s, i) => (
+            <li key={s.id}><span className="vt-routine-n">{i + 1}</span>{s.title}</li>
+          ))}
+        </ol>
+        <div className="vt-routine-opts">
+          <span>イヤホン</span>
+          <button className={`vt-chip ${!earphones ? 'selected' : ''}`} onClick={() => setEar(false)}>なし（お手本→まね）</button>
+          <button className={`vt-chip ${earphones ? 'selected' : ''}`} onClick={() => setEar(true)}>あり（お手本と一緒に）</button>
+        </div>
+        <div className="vt-legend">
+          音域 {midiName(range.lo)}〜{midiName(range.hi)}（「スケール」タブで変更できます） ／ 目標：ブレス {targets.breath}秒・ロングトーン {targets.longtone}秒（記録に合わせて少しずつ伸びます）
+        </div>
+        <button className="kp-start-btn vt-routine-start" onClick={() => { t0.current = Date.now(); logged.current = false; setScores([]); go(0) }}>
+          ▶ 始める
+        </button>
+      </div>
+    )
+  }
+
+  // ── Summary ──
+  if (finished) {
+    const prev = lastRoutine?.score
+    return (
+      <div className="vt-panel">
+        <div className="vt-routine-hero">
+          <div className="vt-routine-hero-title">🎉 お疲れさまでした！</div>
+          <div className="vt-score-head">
+            <span className="vt-score-big" style={{ color: scoreColor(avg) }}>{avg}</span>
+            <span className="vt-score-unit">点</span>
+            <span className="vt-grade" style={{ color: scoreColor(avg), borderColor: scoreColor(avg) }}>{gradeOf(avg)}</span>
+            {prev !== undefined && (
+              <span className="vt-routine-diff" style={{ color: avg >= prev ? '#4ade80' : '#f87171' }}>
+                前回 {prev}点 → {avg >= prev ? '+' : ''}{avg - prev}
+              </span>
+            )}
+          </div>
+          <div className="vt-routine-hero-sub">
+            🔥 連続 {streakDays(loadLog())} 日 ／ {Math.max(1, Math.round((Date.now() - t0.current) / 60000))} 分
+          </div>
+        </div>
+        <div className="vt-metrics">
+          {DAILY_STAGES.map((s, i) => {
+            const sc = scores[i]
+            return (
+              <div key={s.id} className="vt-metric">
+                <span className="vt-metric-k">{s.title}</span>
+                <div className="lp-bar-track">
+                  {typeof sc === 'number' && <div className="lp-bar-fill" style={{ width: `${sc}%`, background: scoreColor(sc) }} />}
+                </div>
+                <span className="vt-metric-v">{typeof sc === 'number' ? `${sc}点` : 'スキップ'}</span>
+              </div>
+            )
+          })}
+        </div>
+        <ul className="vt-tips">
+          {(() => {
+            const pairs = DAILY_STAGES.map((s, i) => ({ s, sc: scores[i] })).filter(p => typeof p.sc === 'number') as { s: Stage; sc: number }[]
+            if (!pairs.length) return null
+            const weakest = pairs.reduce((a, b) => b.sc < a.sc ? b : a)
+            return <li>💡 今日いちばん伸びしろがあるのは「{weakest.s.title}」。{weakest.s.how}</li>
+          })()}
+          <li>💡 明日も同じメニューで。毎日の点数の変化は「記録」タブで見られます。</li>
+        </ul>
+        <div className="vt-routine-nav">
+          <button className="kp-start-btn retry" onClick={() => go(-1)}>↺ 最初から</button>
+          <button className="kp-stop-btn vt-ghost" onClick={onExit}>メニューへ</button>
+        </div>
+      </div>
+    )
+  }
+
+  // ── Stage ──
+  const next = DAILY_STAGES[idx + 1]
+  let panel: JSX.Element | null = null
+  if (phase !== 'prep') {
+    if (stage.kind === 'breath') {
+      panel = <BreathPanel key={runKey} preset={{ targetSec: targets.breath }} onDone={handleDone} />
+    } else if (stage.kind === 'longtone') {
+      panel = <LongTonePanel key={runKey} range={range} setRange={() => {}} onDone={handleDone}
+        preset={{ midi: longToneMidi(stage, range), targetSec: stage.pitchOffset ? targets.longtoneHigh : targets.longtone }} />
+    } else {
+      const plan = planWarmup(stage, range, mode)
+      panel = <WarmupPanel key={runKey} range={range} setRange={() => {}} initialPattern={plan.pattern.id}
+        preset={{ ...plan, mode }} onDone={handleDone} />
+    }
+  }
+
+  return (
+    <div className="vt-panel">
+      <div className="vt-routine-progress">
+        {DAILY_STAGES.map((s, i) => (
+          <span key={s.id} className={`vt-routine-seg ${i < idx ? 'past' : i === idx ? 'now' : ''}`} />
+        ))}
+      </div>
+      <div className="vt-routine-stage">
+        <div className="vt-routine-step">STEP {idx + 1} / {DAILY_STAGES.length}</div>
+        <div className="vt-routine-title">{stage.title}</div>
+        <div className="vt-routine-why">{stage.why}</div>
+        <div className="vt-routine-how">👉 {stage.how}</div>
+      </div>
+
+      {phase === 'prep' && <div className="vt-routine-count">{count > 0 ? count : '♪'}</div>}
+      {panel}
+
+      <div className="vt-routine-nav">
+        {phase === 'done' && (
+          <>
+            <button className="kp-start-btn" onClick={() => go(idx + 1)}>
+              {next ? `次へ：${next.title} ▶` : '結果を見る ▶'}
+            </button>
+            <button className="kp-stop-btn vt-ghost" onClick={() => go(idx)}>↺ もう一度</button>
+          </>
+        )}
+        {phase !== 'done' && (
+          <button className="kp-stop-btn vt-ghost" onClick={() => go(idx + 1)}>スキップ ⏭</button>
+        )}
+        <button className="vt-routine-quit" onClick={() => go(-1)}>やめる</button>
+      </div>
+    </div>
+  )
+}
+
 // ─── Menu & progress ─────────────────────────────────────────────────────────
 
 type MenuItem = { id: string; sub: Sub; pattern?: string; label: string; desc: string }
@@ -684,6 +921,7 @@ const COURSES: { id: string; label: string; time: string; items: string[] }[] = 
 ]
 
 const EXERCISE_NAME: Record<string, string> = {
+  daily10: '今日の10分',
   breath: 'ロングブレス',
   longtone: 'ロングトーン',
   ...Object.fromEntries(PATTERNS.map(p => [p.id, p.name])),
@@ -724,13 +962,17 @@ function MenuPanel({ onGo }: { onGo: (sub: Sub, pattern?: string) => void }) {
 
   return (
     <div className="vt-panel">
+      <button className={`vt-routine-card ${doneToday.has('daily10') ? 'done' : ''}`} onClick={() => onGo('routine')}>
+        <span className="vt-routine-card-title">⭐ 今日の10分ボイトレ</span>
+        <span className="vt-routine-card-sub">{doneToday.has('daily10') ? '✓ 今日は完了！' : 'タップして始める ▶'}</span>
+      </button>
       <div className="vt-stats">
         <div className="vt-stat"><span className="vt-stat-v">🔥 {streak}</span><span className="vt-stat-k">連続日数</span></div>
         <div className="vt-stat"><span className="vt-stat-v">{todayMin}<small>分</small></span><span className="vt-stat-k">今日の練習</span></div>
         <div className="vt-stat"><span className="vt-stat-v">{menuDone}<small>/{menu.length}</small></span><span className="vt-stat-k">メニュー達成</span></div>
       </div>
 
-      <div className="vt-sub-title">今日のメニュー（{course.time}）</div>
+      <div className="vt-sub-title">自由メニュー（{course.time}）</div>
       <div className="vt-range-presets">
         {COURSES.map(c => (
           <button key={c.id} className={`vt-chip ${c.id === course.id ? 'selected' : ''}`} onClick={() => pickCourse(c.id)}>
@@ -800,7 +1042,7 @@ function MenuPanel({ onGo }: { onGo: (sub: Sub, pattern?: string) => void }) {
 // ─── Main ────────────────────────────────────────────────────────────────────
 
 export function VoiceTraining() {
-  const [sub, setSub] = useState<Sub>('menu')
+  const [sub, setSub] = useState<Sub>('routine')
   const [pattern, setPattern] = useState('five')
   const [range, setRangeState] = useState<VoiceRange>(() => loadRange())
   const setRange = (r: VoiceRange) => { setRangeState(r); saveRange(r) }
@@ -808,10 +1050,11 @@ export function VoiceTraining() {
   return (
     <div className="voice-training">
       <div className="vt-subnav">
-        {([['menu', '📋 メニュー'], ['breath', '🌬 ブレス'], ['longtone', '〰 ロングトーン'], ['warmup', '🎼 スケール']] as const).map(([id, label]) => (
+        {([['routine', '⭐ 今日の10分'], ['menu', '📋 記録'], ['breath', '🌬 ブレス'], ['longtone', '〰 ロングトーン'], ['warmup', '🎼 スケール']] as const).map(([id, label]) => (
           <button key={id} className={`vt-subtab ${sub === id ? 'active' : ''}`} onClick={() => setSub(id)}>{label}</button>
         ))}
       </div>
+      {sub === 'routine' && <DailyRoutine range={range} onExit={() => setSub('menu')} />}
       {sub === 'menu' && <MenuPanel onGo={(s, p) => { if (p) setPattern(p); setSub(s) }} />}
       {sub === 'warmup' && <WarmupPanel range={range} setRange={setRange} initialPattern={pattern} />}
       {sub === 'longtone' && <LongTonePanel range={range} setRange={setRange} />}

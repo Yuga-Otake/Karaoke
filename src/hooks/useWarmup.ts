@@ -55,7 +55,7 @@ const INITIAL: WarmupState = {
 
 const SAMPLE_MS = 25
 const ATTACK_GRACE = 0.12   // s ignored at the start of each note
-const STACCATO_SOUND = 0.45 // fraction of the beat that sounds
+const STACCATO_SOUND = 0.5  // fraction of the beat that sounds
 const INPUT_LAG = 0.045     // s: analysis window delay, matters for glides
 
 export function targetAt(tg: TargetNote, t: number): number {
@@ -83,7 +83,7 @@ function layout(p: ExercisePattern, root: number, beat: number, t0: number, sing
   } else {
     p.steps.forEach((s, i) => {
       const d = lengths[i] * beat
-      const len = p.staccato ? Math.min(d * STACCATO_SOUND, 0.35) : d
+      const len = p.staccato ? Math.min(d * STACCATO_SOUND, 0.4) : d
       out.push({ midi: root + s, endMidi: root + s, step: s, label: stepLabel(s), start: t, end: t + len, sing })
       t += d
     })
@@ -106,7 +106,8 @@ function scoreRep(root: number, targets: TargetNote[], frames: PitchFrame[], p: 
   const sung = targets.filter(t => t.sing)
   const notes: NoteResult[] = sung.map(tg => {
     const grace = p.glide ? 0.05 : Math.min(ATTACK_GRACE, (tg.end - tg.start) * 0.3)
-    const fs = frames.filter(f => f.t >= tg.start + grace && f.t <= tg.end - 0.03)
+    // the analysis window lags the voice slightly, so shift the judging window with it
+    const fs = frames.filter(f => f.t >= tg.start + grace + INPUT_LAG && f.t <= tg.end - 0.03 + INPUT_LAG)
     const base = { midi: tg.midi, step: tg.step, label: tg.label }
     if (fs.length === 0) return { ...base, score: 0, cents: null }
     let sum = 0
@@ -134,7 +135,7 @@ function scoreRep(root: number, targets: TargetNote[], frames: PitchFrame[], p: 
     // In the gaps between notes the voice should stop
     let gapFrames = 0, voicedInGap = 0
     for (let i = 0; i < sung.length - 1; i++) {
-      const s = sung[i].end + 0.06, e = sung[i + 1].start - 0.02
+      const s = sung[i].end + 0.06 + INPUT_LAG, e = sung[i + 1].start - 0.02 + INPUT_LAG
       for (const f of frames) {
         if (f.t >= s && f.t <= e) { gapFrames++; if (f.midi !== null) voicedInGap++ }
       }
