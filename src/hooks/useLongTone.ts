@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
-import { detectPitch, computeRMS } from '../utils/pitchDetection'
+import { PitchTracker } from '../utils/pitchTracker'
+import { Meter, EMPTY_METER } from './useWarmup'
 import { openMic, scheduleTone } from '../utils/audioUtils'
 import { foldCents, appendLog } from '../utils/vocalExercises'
 
@@ -27,6 +28,7 @@ export interface LongToneLive {
   singStart: number | null   // ctx time of first voiced frame
   ctx: AudioContext | null
   targetSec: number
+  meter: Meter
 }
 
 const SAMPLE_MS = 25
@@ -78,7 +80,7 @@ export function analyzeLongTone(frames: LongToneFrame[], targetSec: number): Lon
 
 export function useLongTone() {
   const [state, setState] = useState<LongToneState>(INITIAL)
-  const liveRef = useRef<LongToneLive>({ frames: [], singStart: null, ctx: null, targetSec: 10 })
+  const liveRef = useRef<LongToneLive>({ frames: [], singStart: null, ctx: null, targetSec: 10, meter: EMPTY_METER })
   const stopRef = useRef(false)
   const finishRef = useRef(false)
   const closeRef = useRef<(() => void) | null>(null)
@@ -112,7 +114,16 @@ export function useLongTone() {
     }
     closeRef.current = mic.close
     const { ctx, analyser } = mic
-    liveRef.current = { frames: [], singStart: null, ctx, targetSec }
+    liveRef.current = { frames: [], singStart: null, ctx, targetSec, meter: EMPTY_METER }
+    const tracker = new PitchTracker(ctx.sampleRate)
+    const buf = new Float32Array(analyser.fftSize)
+
+    // Learn the room's noise floor for a moment before anything plays
+    const n0 = Date.now()
+    while (Date.now() - n0 < 400 && !stopRef.current) {
+      analyser.getFloatTimeDomainData(buf); tracker.calibrate(buf)
+      await new Promise(r => setTimeout(r, SAMPLE_MS))
+    }
 
     // Reference tone
     scheduleTone(ctx, midi, ctx.currentTime + 0.1, 1.4, 0.5)
@@ -120,19 +131,25 @@ export function useLongTone() {
     if (stopRef.current) return
     setState(prev => ({ ...prev, phase: 'ready' }))
 
-    const buf = new Float32Array(analyser.fftSize)
     const target = 440 * Math.pow(2, (midi - 69) / 12)
     const waitStart = ctx.currentTime
     let lastVoiced = 0
+    let voicedRun = 0
 
     while (!stopRef.current && !finishRef.current) {
       const now = ctx.currentTime
       analyser.getFloatTimeDomainData(buf)
-      const rms = computeRMS(buf)
-      const f = rms > 0.008 ? detectPitch(buf, ctx.sampleRate) : null
+      const fr = tracker.process(buf)
+      const f = fr.midi === null ? null : 440 * Math.pow(2, (fr.midi - 69) / 12)
       const live = liveRef.current
+      live.meter = {
+        db: fr.db, gateDb: 20 * Math.log10(fr.gate),
+        quiet: live.meter.quiet * 0.95 + (fr.tooQuiet ? 0.05 : 0),
+      }
+      voicedRun = f ? voicedRun + 1 : 0
 
-      if (f) {
+      // start only after a few steady frames, so a click or noise burst doesn't trigger it
+      if (f && (live.singStart !== null || voicedRun >= 3)) {
         if (live.singStart === null) {
           live.singStart = now
           setState(prev => ({ ...prev, phase: 'sing' }))
@@ -143,7 +160,7 @@ export function useLongTone() {
         live.frames.push({
           t: now - live.singStart,
           cents: f ? foldCents(Math.log2(f / target) * 1200) : null,
-          db: 20 * Math.log10(Math.max(rms, 1e-5)),
+          db: fr.db,
         })
         if (now - lastVoiced > SILENCE_END || now - live.singStart > MAX_SEC) break
       } else if (now - waitStart > WAIT_LIMIT) {

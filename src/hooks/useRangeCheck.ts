@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
-import { detectPitch } from '../utils/pitchDetection'
+import { PitchTracker } from '../utils/pitchTracker'
 import { midiToFrequency, NOTE_NAMES_EN } from '../utils/musicTheory'
 import { playBeep } from '../utils/audioUtils'
 
@@ -82,6 +82,13 @@ export function useRangeCheck() {
 
     const results = new Map<number, boolean>()
     const timeBuf = new Float32Array(4096)
+    const tracker = new PitchTracker(audioCtxRef.current!.sampleRate)
+    const c0 = Date.now()
+    while (Date.now() - c0 < 400 && !stopRef.current) {
+      analyserRef.current?.getFloatTimeDomainData(timeBuf)
+      tracker.calibrate(timeBuf)
+      await new Promise(r => setTimeout(r, SAMPLE_MS))
+    }
 
     for (const direction of ['up', 'down'] as const) {
       if (stopRef.current) break
@@ -107,7 +114,8 @@ export function useRangeCheck() {
           const analyser = analyserRef.current
           if (ctx && analyser) {
             analyser.getFloatTimeDomainData(timeBuf)
-            const freq = detectPitch(timeBuf, ctx.sampleRate)
+            const tm = tracker.process(timeBuf).midi
+            const freq = tm === null ? null : 440 * Math.pow(2, (tm - 69) / 12)
             let cents: number | null = null
             let hit = false
 

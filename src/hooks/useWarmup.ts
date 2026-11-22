@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
-import { detectPitch, computeRMS } from '../utils/pitchDetection'
+import { PitchTracker } from '../utils/pitchTracker'
 import { openMic, scheduleTone } from '../utils/audioUtils'
 import {
   ExercisePattern, patternLengths, foldCents, appendLog, stepLabel,
@@ -47,7 +47,16 @@ export interface WarmupLive {
   origin: number          // ctx.currentTime at rep clock 0
   repLength: number
   ctx: AudioContext | null
+  meter: Meter
 }
+
+export interface Meter {
+  db: number        // current input level
+  gateDb: number    // level the voice must exceed to count
+  quiet: number     // 0-1: share of recent frames where a voice seemed present but too quiet
+}
+
+export const EMPTY_METER: Meter = { db: -100, gateDb: -50, quiet: 0 }
 
 const INITIAL: WarmupState = {
   phase: 'idle', repIdx: 0, totalReps: 0, root: null, reps: [], sessionScore: 0, error: null,
@@ -56,7 +65,7 @@ const INITIAL: WarmupState = {
 const SAMPLE_MS = 25
 const ATTACK_GRACE = 0.12   // s ignored at the start of each note
 const STACCATO_SOUND = 0.5  // fraction of the beat that sounds
-const INPUT_LAG = 0.045     // s: analysis window delay, matters for glides
+const INPUT_LAG = 0.06      // s: analysis window + smoothing delay
 
 export function targetAt(tg: TargetNote, t: number): number {
   if (tg.endMidi === tg.midi) return tg.midi
@@ -157,7 +166,7 @@ function scoreRep(root: number, targets: TargetNote[], frames: PitchFrame[], p: 
 
 export function useWarmup() {
   const [state, setState] = useState<WarmupState>(INITIAL)
-  const liveRef = useRef<WarmupLive>({ targets: [], frames: [], origin: 0, repLength: 1, ctx: null })
+  const liveRef = useRef<WarmupLive>({ targets: [], frames: [], origin: 0, repLength: 1, ctx: null, meter: EMPTY_METER })
   const stopRef = useRef(false)
   const closeRef = useRef<(() => void) | null>(null)
 
@@ -192,6 +201,14 @@ export function useWarmup() {
 
     const beat = 60 / bpm
     const buf = new Float32Array(analyser.fftSize)
+    const tracker = new PitchTracker(ctx.sampleRate)
+    let meter: Meter = EMPTY_METER
+    // Learn the room's noise floor for a moment before anything plays
+    const n0 = Date.now()
+    while (Date.now() - n0 < 350 && !stopRef.current) {
+      analyser.getFloatTimeDomainData(buf); tracker.calibrate(buf)
+      await new Promise(res => setTimeout(res, SAMPLE_MS))
+    }
     const reps: RepResult[] = []
     const t0 = Date.now()
 
@@ -221,7 +238,7 @@ export function useWarmup() {
       scheduleNotes(ctx, pattern, listen, origin, 0.5)
       if (mode === 'together') scheduleNotes(ctx, pattern, s.notes, origin, 0.22)
 
-      liveRef.current = { targets, frames: [], origin, repLength, ctx }
+      liveRef.current = { targets, frames: [], origin, repLength, ctx, meter }
       setState(prev => ({ ...prev, phase: 'cue', repIdx: r, root }))
 
       const singStart = s.notes[0].start
@@ -235,11 +252,16 @@ export function useWarmup() {
         const ph: WarmupPhase = now >= singStart ? 'sing' : now >= listenStart ? 'listen' : 'cue'
         if (ph !== lastPhase) { lastPhase = ph; setState(prev => ({ ...prev, phase: ph })) }
 
-        if (now >= singStart - 0.2) {
-          analyser.getFloatTimeDomainData(buf)
-          const f = computeRMS(buf) > 0.006 ? detectPitch(buf, ctx.sampleRate) : null
-          liveRef.current.frames.push({ t: now, midi: f ? 69 + 12 * Math.log2(f / 440) : null })
+        // Track every frame so the noise floor is learned before singing starts
+        analyser.getFloatTimeDomainData(buf)
+        const fr = tracker.process(buf)
+        meter = {
+          db: fr.db,
+          gateDb: 20 * Math.log10(fr.gate),
+          quiet: now >= singStart ? meter.quiet * 0.95 + (fr.tooQuiet ? 0.05 : 0) : 0,
         }
+        liveRef.current.meter = meter
+        if (now >= singStart - 0.2) liveRef.current.frames.push({ t: now, midi: fr.midi })
         await new Promise(res => setTimeout(res, SAMPLE_MS))
       }
       if (stopRef.current) return
