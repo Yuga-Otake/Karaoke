@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
-import { detectPitch } from '../utils/pitchDetection'
+import { PitchTracker } from '../utils/pitchTracker'
 import { frequencyToNote, midiToFrequency, NOTE_NAMES_EN, NOTE_NAMES_JP, SCALES } from '../utils/musicTheory'
 import { analyzeResonance } from '../utils/resonanceAnalysis'
 import { gradeOf } from '../utils/scoring'
@@ -127,11 +127,18 @@ export function useKaraoke() {
       return
     }
 
-    // ── Countdown ───────────────────────────────────────────────────
+    // ── Countdown (also learns the room's noise floor) ──────────────
+    const tracker = new PitchTracker(audioCtxRef.current!.sampleRate)
+    const calBuf = new Float32Array(4096)
     for (let c = 3; c >= 1; c--) {
       if (stopRef.current) return
       setState(prev => ({ ...prev, phase: 'countdown', countdown: c }))
-      await new Promise(r => setTimeout(r, 900))
+      const c0 = Date.now()
+      while (Date.now() - c0 < 900 && !stopRef.current) {
+        analyserRef.current?.getFloatTimeDomainData(calBuf)
+        tracker.calibrate(calBuf)
+        await new Promise(r => setTimeout(r, 50))
+      }
     }
 
     const noteScores: NoteScore[] = []
@@ -165,7 +172,8 @@ export function useKaraoke() {
           analyser.getFloatTimeDomainData(timeBuf)
           analyser.getFloatFrequencyData(freqBuf)
 
-          const freq = detectPitch(timeBuf, ctx.sampleRate)
+          const tm = tracker.process(timeBuf).midi
+          const freq = tm === null ? null : 440 * Math.pow(2, (tm - 69) / 12)
           let cents = 0, pitchScore = 0, resonance = 0
 
           if (freq) {

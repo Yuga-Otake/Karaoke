@@ -7,9 +7,16 @@ export function computeRMS(buffer: Float32Array): number {
   return Math.sqrt(sum / buffer.length)
 }
 
-export function detectPitch(buffer: Float32Array, sampleRate: number): number | null {
-  if (computeRMS(buffer) < 0.003) return null
+export interface YinResult {
+  frequency: number
+  aperiodicity: number   // 0 = perfectly periodic; higher = noisier / less certain
+}
 
+/**
+ * Core YIN estimate without any loudness gate.
+ * `maxAperiodicity` decides how unclear a frame may be and still count as pitched.
+ */
+export function yinPitch(buffer: Float32Array, sampleRate: number, maxAperiodicity = 0.4): YinResult | null {
   const minFreq = 60
   const maxFreq = 3500
   const minTau = Math.max(2, Math.floor(sampleRate / maxFreq))
@@ -19,10 +26,12 @@ export function detectPitch(buffer: Float32Array, sampleRate: number): number | 
   // Step 1: Difference function (only for relevant tau range)
   const d = new Float32Array(maxTau + 1)
   for (let tau = minTau; tau <= maxTau; tau++) {
+    let sum = 0
     for (let j = 0; j < maxTau; j++) {
       const delta = buffer[j] - buffer[j + tau]
-      d[tau] += delta * delta
+      sum += delta * delta
     }
+    d[tau] = sum
   }
 
   // Step 2: Cumulative mean normalized difference function (CMNDF)
@@ -51,9 +60,10 @@ export function detectPitch(buffer: Float32Array, sampleRate: number): number | 
     for (let t = minTau + 1; t <= maxTau; t++) {
       if (dp[t] < minVal) { minVal = dp[t]; minIdx = t }
     }
-    if (minVal > 0.40) return null
+    if (minVal > maxAperiodicity) return null
     tau = minIdx
   }
+  if (dp[tau] > maxAperiodicity) return null
 
   // Step 4: Parabolic interpolation for sub-sample accuracy
   let betterTau = tau
@@ -67,5 +77,10 @@ export function detectPitch(buffer: Float32Array, sampleRate: number): number | 
 
   const frequency = sampleRate / betterTau
   if (frequency < minFreq || frequency > maxFreq) return null
-  return frequency
+  return { frequency, aperiodicity: dp[tau] }
+}
+
+export function detectPitch(buffer: Float32Array, sampleRate: number): number | null {
+  if (computeRMS(buffer) < 0.003) return null
+  return yinPitch(buffer, sampleRate)?.frequency ?? null
 }

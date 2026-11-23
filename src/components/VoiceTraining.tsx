@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useMemo, useCallback, MutableRefObject } from 'react'
-import { useWarmup, WarmupLive, WarmupMode, RepResult, WarmupState, targetAt } from '../hooks/useWarmup'
+import { useWarmup, WarmupLive, WarmupMode, RepResult, WarmupState, targetAt, Meter } from '../hooks/useWarmup'
+import { Sensitivity, SENSITIVITY_LABEL, loadSensitivity, saveSensitivity } from '../utils/pitchTracker'
 import { useBreath, BreathLive, BreathResult } from '../hooks/useBreath'
 import { BUILD_ID } from '../utils/autoUpdate'
 import {
@@ -50,6 +51,35 @@ function useAnimatedCanvas(draw: (g: CanvasRenderingContext2D, w: number, h: num
     return () => cancelAnimationFrame(raf)
   }, [height])
   return ref
+}
+
+/** Input level bar (top-right) + a warning when the voice is too quiet to track. */
+function drawMeter(g: CanvasRenderingContext2D, w: number, m: Meter) {
+  const bw = 90, bh = 6, x0 = w - bw - 10, y0 = 8
+  const pos = (db: number) => x0 + Math.max(0, Math.min(1, (db + 70) / 60)) * bw
+  g.fillStyle = '#1e293b'; g.fillRect(x0, y0, bw, bh)
+  g.fillStyle = m.db >= m.gateDb ? '#4ade80' : '#64748b'
+  g.fillRect(x0, y0, pos(m.db) - x0, bh)
+  g.fillStyle = '#facc15'; g.fillRect(pos(m.gateDb) - 1, y0 - 2, 2, bh + 4)
+  g.fillStyle = '#64748b'; g.font = '9px sans-serif'; g.textAlign = 'right'
+  g.fillText('マイク入力', x0 - 4, y0 + 6)
+  if (m.quiet > 0.3) {
+    g.fillStyle = 'rgba(250,204,21,.95)'; g.font = 'bold 12px sans-serif'; g.textAlign = 'right'
+    g.fillText(w > 480 ? '🔈 声が小さくて拾えていません：マイクに近づくか感度を「高」に' : '🔈 声が小さい：近づくか感度を「高」に', w - 10, y0 + 38)
+  }
+}
+
+function MicSensitivity() {
+  const [sens, setSens] = useState<Sensitivity>(() => loadSensitivity())
+  return (
+    <div className="vt-routine-opts">
+      <span>マイク感度</span>
+      {(['high', 'normal', 'low'] as Sensitivity[]).map(k => (
+        <button key={k} className={`vt-chip ${sens === k ? 'selected' : ''}`}
+          onClick={() => { setSens(k); saveSensitivity(k) }}>{SENSITIVITY_LABEL[k]}</button>
+      ))}
+    </div>
+  )
 }
 
 // ─── Range settings ──────────────────────────────────────────────────────────
@@ -164,6 +194,8 @@ function WarmupCanvas({ liveRef, active }: { liveRef: MutableRefObject<WarmupLiv
       }
       prev = { px, py }
     }
+
+    if (active) drawMeter(g, w, liveRef.current.meter)
 
     // Playhead
     if (active && now < repLength) {
@@ -436,7 +468,7 @@ function LongToneCanvas({ liveRef, active }: { liveRef: MutableRefObject<LongTon
     g.beginPath(); g.moveTo(x(targetSec), 0); g.lineTo(x(targetSec), h); g.stroke()
     g.setLineDash([])
     g.fillStyle = '#facc15'; g.textAlign = 'left'
-    g.fillText(`目標 ${targetSec}秒`, Math.min(x(targetSec) + 3, w - 56), 12)
+    g.fillText(`目標 ${targetSec}秒`, Math.min(x(targetSec) + 3, w - 56), 28)
 
     // Volume
     g.strokeStyle = 'rgba(168,85,247,.8)'; g.lineWidth = 1.5
@@ -455,6 +487,8 @@ function LongToneCanvas({ liveRef, active }: { liveRef: MutableRefObject<LongTon
       if (prev) { g.beginPath(); g.moveTo(prev[0], prev[1]); g.lineTo(p[0], p[1]); g.stroke() }
       prev = p
     }
+
+    if (active) drawMeter(g, w, liveRef.current.meter)
 
     if (!frames.length) {
       g.fillStyle = '#475569'; g.font = '13px sans-serif'; g.textAlign = 'center'
@@ -1054,6 +1088,7 @@ export function VoiceTraining() {
           <button key={id} className={`vt-subtab ${sub === id ? 'active' : ''}`} onClick={() => setSub(id)}>{label}</button>
         ))}
       </div>
+      <MicSensitivity />
       {sub === 'routine' && <DailyRoutine range={range} onExit={() => setSub('menu')} />}
       {sub === 'menu' && <MenuPanel onGo={(s, p) => { if (p) setPattern(p); setSub(s) }} />}
       {sub === 'warmup' && <WarmupPanel range={range} setRange={setRange} initialPattern={pattern} />}
