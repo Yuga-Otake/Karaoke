@@ -149,7 +149,7 @@ export function foldCents(cents: number): number {
 
 export interface PracticeEntry {
   date: string            // ISO timestamp
-  kind: 'warmup' | 'longtone' | 'breath' | 'routine'
+  kind: 'warmup' | 'longtone' | 'breath' | 'routine' | 'song'
   exercise: string        // pattern id, 'longtone' or 'breath'
   score: number
   seconds: number         // time spent

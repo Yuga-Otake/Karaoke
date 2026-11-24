@@ -68,3 +68,16 @@ export async function openMic(fftSize = 2048) {
   }
   return { ctx, analyser, close }
 }
+
+/** Short metronome tick. */
+export function scheduleClick(ctx: AudioContext, when: number, accent = false) {
+  const osc = ctx.createOscillator()
+  const g = ctx.createGain()
+  osc.type = 'square'
+  osc.frequency.value = accent ? 1600 : 1100
+  g.gain.setValueAtTime(0, when)
+  g.gain.linearRampToValueAtTime(accent ? 0.18 : 0.1, when + 0.002)
+  g.gain.exponentialRampToValueAtTime(0.0001, when + 0.05)
+  osc.connect(g); g.connect(ctx.destination)
+  osc.start(when); osc.stop(when + 0.06)
+}
