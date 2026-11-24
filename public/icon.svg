@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="30%" r="85%">
+      <stop offset="0" stop-color="#2a2370"/><stop offset="0.55" stop-color="#121538"/><stop offset="1" stop-color="#060914"/>
+    </radialGradient>
+    <linearGradient id="mic" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2ff0ff"/><stop offset="1" stop-color="#a855f7"/>
+    </linearGradient>
+    <linearGradient id="bar" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0" stop-color="#22e6ff"/><stop offset="1" stop-color="#a855f7"/>
+    </linearGradient>
+    <linearGradient id="trace" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0" stop-color="#4ade80"/><stop offset="1" stop-color="#5ef0c0"/>
+    </linearGradient>
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="16"/></filter>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="22"/></filter>
+    <clipPath id="cap"><rect x="377" y="138" width="270" height="430" rx="135"/></clipPath>
+  </defs>
+  <rect width="1024" height="1024" fill="url(#bg)"/>
+
+  <!-- rising note bars + voice trace (the "getting better" staircase) -->
+  <g fill="url(#bar)" opacity=".38">
+    <rect x="40" y="806" width="190" height="56" rx="28"/>
+    <rect x="216" y="676" width="190" height="56" rx="28"/>
+    <rect x="618" y="416" width="190" height="56" rx="28"/>
+    <rect x="794" y="286" width="190" height="56" rx="28"/>
+  </g>
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M60 834 H190 Q214 834 220 812 L236 726 Q242 704 266 704 H392 M632 444 H768 Q792 444 798 422 L814 336 Q820 314 844 314 H964"
+      stroke="url(#trace)" stroke-width="40" filter="url(#glow)" opacity=".85"/>
+    <path d="M60 834 H190 Q214 834 220 812 L236 726 Q242 704 266 704 H392 M632 444 H768 Q792 444 798 422 L814 336 Q820 314 844 314 H964"
+      stroke="#c8ffe0" stroke-width="20"/>
+  </g>
+
+  <!-- microphone -->
+  <rect x="377" y="160" width="270" height="430" rx="135" fill="#000" opacity=".45" filter="url(#shadow)"/>
+  <rect x="377" y="138" width="270" height="430" rx="135" fill="url(#mic)"/>
+  <g clip-path="url(#cap)" stroke="#0b1022" stroke-opacity=".25" stroke-width="16">
+    <line x1="377" y1="248" x2="647" y2="248"/><line x1="377" y1="302" x2="647" y2="302"/>
+    <line x1="377" y1="356" x2="647" y2="356"/><line x1="377" y1="410" x2="647" y2="410"/>
+  </g>
+  <ellipse cx="458" cy="236" rx="36" ry="72" fill="#fff" opacity=".3"/>
+  <path d="M310 466 V488 A202 202 0 0 0 714 488 V466" fill="none" stroke="#eef2f7" stroke-width="44" stroke-linecap="round"/>
+  <line x1="512" y1="692" x2="512" y2="808" stroke="#eef2f7" stroke-width="44" stroke-linecap="round"/>
+  <line x1="402" y1="830" x2="622" y2="830" stroke="#eef2f7" stroke-width="44" stroke-linecap="round"/>
+</svg>
