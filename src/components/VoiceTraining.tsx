@@ -13,61 +13,10 @@ import {
   loadLog, clearLog, appendLog, PracticeEntry, dayKey, streakDays,
 } from '../utils/vocalExercises'
 import { gradeOf } from '../utils/scoring'
+import { scoreColor, useAnimatedCanvas, drawMeter } from './vtShared'
+import { SongPractice } from './SongPractice'
 
-type Sub = 'routine' | 'menu' | 'warmup' | 'longtone' | 'breath'
-
-const GRADE_COLOR: Record<string, string> = {
-  S: '#fbbf24', A: '#4ade80', B: '#00e5ff', C: '#facc15', D: '#f97316', F: '#f87171',
-}
-const scoreColor = (s: number) => GRADE_COLOR[gradeOf(s)]
-
-// ─── Canvas helper ───────────────────────────────────────────────────────────
-
-function useAnimatedCanvas(draw: (g: CanvasRenderingContext2D, w: number, h: number) => void, height: number) {
-  const ref = useRef<HTMLCanvasElement>(null)
-  const drawRef = useRef(draw)
-  drawRef.current = draw
-  useEffect(() => {
-    let raf = 0
-    const loop = () => {
-      const c = ref.current
-      if (c) {
-        const dpr = window.devicePixelRatio || 1
-        const w = c.clientWidth
-        if (c.width !== Math.round(w * dpr) || c.height !== Math.round(height * dpr)) {
-          c.width = Math.round(w * dpr)
-          c.height = Math.round(height * dpr)
-        }
-        const g = c.getContext('2d')
-        if (g) {
-          g.setTransform(dpr, 0, 0, dpr, 0, 0)
-          g.clearRect(0, 0, w, height)
-          drawRef.current(g, w, height)
-        }
-      }
-      raf = requestAnimationFrame(loop)
-    }
-    raf = requestAnimationFrame(loop)
-    return () => cancelAnimationFrame(raf)
-  }, [height])
-  return ref
-}
-
-/** Input level bar (top-right) + a warning when the voice is too quiet to track. */
-function drawMeter(g: CanvasRenderingContext2D, w: number, m: Meter) {
-  const bw = 90, bh = 6, x0 = w - bw - 10, y0 = 8
-  const pos = (db: number) => x0 + Math.max(0, Math.min(1, (db + 70) / 60)) * bw
-  g.fillStyle = '#1e293b'; g.fillRect(x0, y0, bw, bh)
-  g.fillStyle = m.db >= m.gateDb ? '#4ade80' : '#64748b'
-  g.fillRect(x0, y0, pos(m.db) - x0, bh)
-  g.fillStyle = '#facc15'; g.fillRect(pos(m.gateDb) - 1, y0 - 2, 2, bh + 4)
-  g.fillStyle = '#64748b'; g.font = '9px sans-serif'; g.textAlign = 'right'
-  g.fillText('マイク入力', x0 - 4, y0 + 6)
-  if (m.quiet > 0.3) {
-    g.fillStyle = 'rgba(250,204,21,.95)'; g.font = 'bold 12px sans-serif'; g.textAlign = 'right'
-    g.fillText(w > 480 ? '🔈 声が小さくて拾えていません：マイクに近づくか感度を「高」に' : '🔈 声が小さい：近づくか感度を「高」に', w - 10, y0 + 38)
-  }
-}
+type Sub = 'routine' | 'menu' | 'warmup' | 'longtone' | 'breath' | 'song'
 
 function MicSensitivity() {
   const [sens, setSens] = useState<Sensitivity>(() => loadSensitivity())
@@ -956,6 +905,7 @@ const COURSES: { id: string; label: string; time: string; items: string[] }[] = 
 
 const EXERCISE_NAME: Record<string, string> = {
   daily10: '今日の10分',
+  song: '曲練習',
   breath: 'ロングブレス',
   longtone: 'ロングトーン',
   ...Object.fromEntries(PATTERNS.map(p => [p.id, p.name])),
@@ -1084,7 +1034,7 @@ export function VoiceTraining() {
   return (
     <div className="voice-training">
       <div className="vt-subnav">
-        {([['routine', '⭐ 今日の10分'], ['menu', '📋 記録'], ['breath', '🌬 ブレス'], ['longtone', '〰 ロングトーン'], ['warmup', '🎼 スケール']] as const).map(([id, label]) => (
+        {([['routine', '⭐ 今日の10分'], ['menu', '📋 記録'], ['breath', '🌬 ブレス'], ['longtone', '〰 ロングトーン'], ['warmup', '🎼 スケール'], ['song', '🎶 曲で練習']] as const).map(([id, label]) => (
           <button key={id} className={`vt-subtab ${sub === id ? 'active' : ''}`} onClick={() => setSub(id)}>{label}</button>
         ))}
       </div>
@@ -1094,6 +1044,7 @@ export function VoiceTraining() {
       {sub === 'warmup' && <WarmupPanel range={range} setRange={setRange} initialPattern={pattern} />}
       {sub === 'longtone' && <LongTonePanel range={range} setRange={setRange} />}
       {sub === 'breath' && <BreathPanel />}
+      {sub === 'song' && <SongPractice range={range} />}
       <div className="vt-footnote">✱ 声がかすれる・喉が痛いときは無理をせず休みましょう。イヤホンを使うと検出精度が上がります。<span className="vt-version">ver {BUILD_ID}</span></div>
     </div>
   )
