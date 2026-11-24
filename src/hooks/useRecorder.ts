@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback } from 'react'
 import { detectPitch } from '../utils/pitchDetection'
 import { frequencyToNote, NoteInfo } from '../utils/musicTheory'
+import { pickRecorderMime } from '../utils/audioUtils'
 
 export interface PitchSample {
   time: number            // seconds from recording start
@@ -66,12 +67,8 @@ export function useRecorder(onSave: (rec: Recording) => void) {
       analyserRef.current = analyser
       audioCtx.createMediaStreamSource(stream).connect(analyser)
 
-      const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
-        ? 'audio/webm;codecs=opus'
-        : MediaRecorder.isTypeSupported('audio/webm')
-        ? 'audio/webm'
-        : 'audio/ogg'
-      const recorder = new MediaRecorder(stream, { mimeType })
+      const mimeType = pickRecorderMime()
+      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream)
       mediaRecorderRef.current = recorder
       chunksRef.current = []
       samplesRef.current = []

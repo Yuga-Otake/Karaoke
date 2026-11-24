@@ -66,7 +66,24 @@ export async function openMic(fftSize = 2048) {
     ctx.close().catch(() => {})
     stream.getTracks().forEach(t => t.stop())
   }
-  return { ctx, analyser, close }
+  return { ctx, analyser, close, stream }
+}
+
+/** A recording format this browser supports (iPhone Safari records mp4, Chrome webm). */
+export function pickRecorderMime(): string | undefined {
+  if (typeof MediaRecorder === 'undefined') return undefined
+  for (const t of ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/aac', 'audio/ogg;codecs=opus']) {
+    try { if (MediaRecorder.isTypeSupported(t)) return t } catch { /* ignore */ }
+  }
+  return undefined
+}
+
+export function createRecorder(stream: MediaStream): MediaRecorder | null {
+  if (typeof MediaRecorder === 'undefined') return null
+  const mimeType = pickRecorderMime()
+  try { return mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream) } catch {
+    try { return new MediaRecorder(stream) } catch { return null }
+  }
 }
 
 /** Short metronome tick. */
