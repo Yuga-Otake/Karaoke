@@ -2688,3 +2688,31 @@ button { font-family: inherit; cursor: pointer; }
 .sp-weak-item { display: grid; grid-template-columns: auto 1fr auto auto; gap: 0.6rem; align-items: center; font-size: 0.85rem; padding: 0.4rem 0.6rem; border-radius: 0.4rem; background: rgba(248,113,113,.06); }
 .sp-weak-bar { color: var(--muted); font-size: 0.75rem; }
 .sp-weak-words { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Recordings / player */
+.sp-player {
+  display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;
+  padding: 0.6rem 0.75rem; border-radius: 0.6rem;
+  background: rgba(168,85,247,.08); border: 1px solid rgba(168,85,247,.35);
+}
+.sp-play {
+  width: 2.6rem; height: 2.6rem; border-radius: 50%; border: none; flex: none;
+  background: linear-gradient(135deg, var(--cyan), var(--purple)); color: var(--bg); font-size: 1rem; font-weight: 900;
+}
+.sp-play.small { width: 2rem; height: 2rem; font-size: 0.8rem; }
+.sp-play:disabled { opacity: .3; }
+.sp-player-mid { flex: 1 1 160px; display: flex; flex-direction: column; gap: 0.2rem; min-width: 0; }
+.sp-player-title { font-size: 0.8rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sp-player-date { margin-left: 0.5rem; color: var(--dim); }
+.sp-seek { width: 100%; accent-color: var(--purple); }
+.sp-time { font-size: 0.75rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.sp-take {
+  display: flex; align-items: center; gap: 0.6rem; padding: 0.35rem 0.5rem; border-radius: 0.5rem;
+  background: rgba(255,255,255,.03); border: 1px solid transparent; font-size: 0.82rem;
+}
+.sp-take.active { border-color: rgba(168,85,247,.5); background: rgba(168,85,247,.08); }
+.sp-take-score { font-weight: 900; min-width: 3rem; }
+.sp-take-label { flex: 1; color: var(--text); }
+.sp-take-date { color: var(--dim); font-size: 0.72rem; }
+.sp-take-saved { color: var(--green); font-size: 0.75rem; font-weight: 700; }
+.sp-take .sp-icon { height: 2rem; width: 2.2rem; }

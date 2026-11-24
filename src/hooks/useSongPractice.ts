@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { PitchTracker } from '../utils/pitchTracker'
-import { openMic, scheduleTone, scheduleClick } from '../utils/audioUtils'
+import { openMic, scheduleTone, scheduleClick, createRecorder } from '../utils/audioUtils'
 import { foldCents, appendLog } from '../utils/vocalExercises'
 import { Meter, EMPTY_METER } from './useWarmup'
 
@@ -29,6 +29,20 @@ export interface SongResult {
   avgCents: number | null
   highCents: number | null   // average offset on the highest notes
   avgAttackMs: number | null
+}
+
+/** One sung take: everything needed to replay it with the piano roll. */
+export interface TakeRecording {
+  id: string
+  date: string
+  score: number
+  notes: TimedNote[]
+  frames: { t: number; midi: number | null }[]
+  scores: [number, number][]
+  offset: number      // take-clock seconds at audio position 0
+  length: number
+  blob: Blob | null
+  url: string | null
 }
 
 export interface SongLive {
@@ -98,6 +112,7 @@ export function useSongPractice() {
   const [phase, setPhase] = useState<SongPhase>('idle')
   const [result, setResult] = useState<SongResult | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [take, setTake] = useState<TakeRecording | null>(null)
   const liveRef = useRef<SongLive>({ notes: [], frames: [], origin: 0, length: 1, ctx: null, meter: EMPTY_METER, scores: new Map() })
   const stopRef = useRef(false)
   const closeRef = useRef<(() => void) | null>(null)
@@ -129,6 +144,7 @@ export function useSongPractice() {
 
     let ctx: AudioContext
     let analyser: AnalyserNode | null = null
+    let stream: MediaStream | null = null
     if (listenOnly) {
       ctx = new AudioContext()
       if (ctx.state === 'suspended') await ctx.resume()
@@ -136,7 +152,7 @@ export function useSongPractice() {
     } else {
       try {
         const mic = await openMic(2048)
-        ctx = mic.ctx; analyser = mic.analyser; closeRef.current = mic.close
+        ctx = mic.ctx; analyser = mic.analyser; closeRef.current = mic.close; stream = mic.stream
       } catch {
         setError('マイクにアクセスできません。ブラウザの権限を確認してください。')
         return
@@ -169,6 +185,18 @@ export function useSongPractice() {
     liveRef.current = { notes: timed, frames: [], origin, length, ctx, meter: EMPTY_METER, scores: new Map() }
     setPhase('countin')
 
+    // Record the take; `recOffset` maps audio position 0 onto the take clock
+    const recorder = stream ? createRecorder(stream) : null
+    const chunks: Blob[] = []
+    let recOffset = 0
+    const recStopped = new Promise<void>(res => {
+      if (!recorder) { res(); return }
+      recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data) }
+      recorder.onstart = () => { recOffset = ctx.currentTime - origin }
+      recorder.onstop = () => res()
+    })
+    try { recorder?.start() } catch { /* recording unavailable: keep practising without it */ }
+
     const t0 = Date.now()
     let current: SongPhase = 'countin'
     let meter = EMPTY_METER
@@ -186,12 +214,30 @@ export function useSongPractice() {
       }
       await new Promise(r => setTimeout(r, SAMPLE_MS))
     }
-    if (stopRef.current) return
+    if (stopRef.current) { try { recorder?.stop() } catch { /* ignore */ } return }
+
+    if (recorder && recorder.state !== 'inactive') {
+      recorder.stop()
+      await Promise.race([recStopped, new Promise(r => setTimeout(r, 1500))])
+    }
 
     if (!listenOnly) {
       const r = scoreTake(timed, liveRef.current.frames)
       r.notes.forEach(n => liveRef.current.scores.set(n.idx, n.score))
       setResult(r)
+      const blob = chunks.length ? new Blob(chunks, { type: chunks[0].type || recorder?.mimeType || 'audio/mp4' }) : null
+      setTake({
+        id: 'take-' + Date.now().toString(36),
+        date: new Date().toISOString(),
+        score: r.score,
+        notes: timed,
+        frames: liveRef.current.frames,
+        scores: r.notes.map(n => [n.idx, n.score]),
+        offset: recOffset,
+        length,
+        blob,
+        url: blob ? URL.createObjectURL(blob) : null,
+      })
       appendLog({
         date: new Date().toISOString(), kind: 'song', exercise: 'song',
         score: r.score, seconds: Math.round((Date.now() - t0) / 1000),
@@ -203,5 +249,5 @@ export function useSongPractice() {
 
   useEffect(() => () => { stopRef.current = true; cleanup() }, [cleanup])
 
-  return { phase, result, error, liveRef, start, stop }
+  return { phase, result, error, take, liveRef, start, stop }
 }

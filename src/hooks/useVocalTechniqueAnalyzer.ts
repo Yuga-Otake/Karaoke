@@ -251,7 +251,7 @@ export function useVocalTechniqueAnalyzer() {
     const mr = new MediaRecorder(stream)
     mr.ondataavailable = e => { if (e.data.size > 0) recChunksRef.current.push(e.data) }
     mr.onstop = () => {
-      const blob     = new Blob(recChunksRef.current, { type: 'audio/webm' })
+      const blob     = new Blob(recChunksRef.current, { type: recChunksRef.current[0]?.type || mr.mimeType || 'audio/mp4' })
       const url      = URL.createObjectURL(blob)
       const duration = (performance.now() - recStartRef.current) / 1000
       setState(prev => ({

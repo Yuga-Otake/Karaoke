@@ -1,9 +1,12 @@
-import { useState, useMemo, useRef, useEffect, MutableRefObject } from 'react'
+import { useState, useMemo, useRef, useEffect, useCallback } from 'react'
 import {
   Song, SongNote, parseMelody, toMelodyText, autoTranspose, parseMidi, MidiImport,
   loadSongs, saveSong, deleteSong, recordSongScore, newSongId,
 } from '../utils/song'
-import { useSongPractice, SongLive, TimedNote, SongResult } from '../hooks/useSongPractice'
+import { useSongPractice, TimedNote, SongResult, TakeRecording } from '../hooks/useSongPractice'
+import { Meter } from '../hooks/useWarmup'
+import { scheduleTone } from '../utils/audioUtils'
+import { saveTake, listTakes, deleteTake } from '../utils/takeStore'
 import { VoiceRange, midiName } from '../utils/vocalExercises'
 import { gradeOf } from '../utils/scoring'
 import { scoreColor, useAnimatedCanvas, drawMeter } from './vtShared'
@@ -299,8 +302,54 @@ function PracticeView({ song, range, onBack, onEdit }: {
     [notes, beatSec, song.beatsPerBar, fromBar, toBar, transpose])
   const autoT = autoTranspose(notes, range)
 
-  const sing = () => sp.start({ notes: section, beatSec, beatsPerBar: song.beatsPerBar, guide })
-  const listen = () => sp.start({ notes: section, beatSec, beatsPerBar: song.beatsPerBar, guide: true, listenOnly: true })
+  const player = useTakePlayer()
+  const sing = () => { player.close(); sp.start({ notes: section, beatSec, beatsPerBar: song.beatsPerBar, guide }) }
+  const listen = () => { player.close(); sp.start({ notes: section, beatSec, beatsPerBar: song.beatsPerBar, guide: true, listenOnly: true }) }
+
+  // Recordings: this session's takes + the ones saved on this device
+  const [sessionTakes, setSessionTakes] = useState<PlayableTake[]>([])
+  const [savedTakes, setSavedTakes] = useState<PlayableTake[]>([])
+  const reloadSaved = useCallback(() => {
+    listTakes(song.id).then(ts => setSavedTakes(prev => {
+      prev.forEach(t => t.url && URL.revokeObjectURL(t.url))
+      return ts.map(t => ({ ...t, url: URL.createObjectURL(t.blob), saved: true, label: `${t.from + 1}〜${t.to}小節` }))
+    }))
+  }, [song.id])
+  useEffect(() => { reloadSaved() }, [reloadSaved])
+  useEffect(() => {
+    if (!sp.take) return
+    const t = sp.take
+    setSessionTakes(prev => prev.some(x => x.id === t.id) ? prev
+      : [{ ...t, label: `${fromBar + 1}〜${toBar}小節`, meta: { from: fromBar, to: toBar, transpose, speed } }, ...prev].slice(0, 10))
+  }, [sp.take])  // eslint-disable-line react-hooks/exhaustive-deps
+
+  const getView = (): RollView | null => {
+    const live = sp.liveRef.current
+    if (running && live.ctx) {
+      return { notes: live.notes, frames: live.frames, scores: live.scores, now: live.ctx.currentTime - live.origin, meter: live.meter }
+    }
+    const pt = player.take
+    if (pt) return { notes: pt.notes, frames: pt.frames, scores: new Map(pt.scores), now: player.position() + pt.offset }
+    if (live.notes.length) return { notes: live.notes, frames: live.frames, scores: live.scores, now: live.notes[0].start }
+    return section.length ? { notes: section, frames: [], scores: new Map(), now: section[0].start - 0.5 } : null
+  }
+
+  const save = async (t: PlayableTake) => {
+    if (!t.blob || !t.meta) return
+    await saveTake({
+      id: t.id, songId: song.id, date: t.date, score: t.score, from: t.meta.from, to: t.meta.to,
+      transpose: t.meta.transpose, speed: t.meta.speed, notes: t.notes, frames: t.frames, scores: t.scores,
+      offset: t.offset, length: t.length, blob: t.blob,
+    })
+    setSessionTakes(prev => prev.map(x => x.id === t.id ? { ...x, saved: true } : x))
+    reloadSaved()
+  }
+  const remove = async (t: PlayableTake) => {
+    if (!confirm('この録音を削除しますか？')) return
+    if (player.take?.id === t.id) player.close()
+    await deleteTake(t.id)
+    reloadSaved()
+  }
 
   // Record the score once per finished take (remembering the previous score for this section)
   const [prevScore, setPrevScore] = useState<number | null>(null)
@@ -385,11 +434,16 @@ function PracticeView({ song, range, onBack, onEdit }: {
         </div>
       )}
 
-      <ScrollCanvas liveRef={sp.liveRef} active={running} placeholder={section} />
+      <ScrollCanvas getView={getView} />
+      {player.take && !running && <PlayerBar player={player} />}
 
       {sp.result && sp.phase === 'complete' && (
         <SongResults result={sp.result} section={section} prevScore={prevScore}
           onPractice={(a, b) => { setFromBar(a); setToBar(b) }} />
+      )}
+
+      {!running && (sessionTakes.length > 0 || savedTakes.length > 0) && (
+        <TakeList player={player} sessionTakes={sessionTakes} savedTakes={savedTakes} onSave={save} onDelete={remove} />
       )}
     </div>
   )
@@ -400,16 +454,19 @@ function PracticeView({ song, range, onBack, onEdit }: {
 const WINDOW_SEC = 6
 const PLAYHEAD = 0.28
 
-function ScrollCanvas({ liveRef, active, placeholder }: {
-  liveRef: MutableRefObject<SongLive>; active: boolean; placeholder: TimedNote[]
-}) {
+export interface RollView {
+  notes: TimedNote[]
+  frames: { t: number; midi: number | null }[]
+  scores: Map<number, number>
+  now: number
+  meter?: Meter
+}
+
+function ScrollCanvas({ getView }: { getView: () => RollView | null }) {
   const ref = useAnimatedCanvas((g, w, h) => {
-    const live = liveRef.current
-    const hasTake = live.notes.length > 0
-    const notes = hasTake ? live.notes : placeholder
-    if (!notes.length) return
-    const now = active && live.ctx ? live.ctx.currentTime - live.origin
-      : hasTake ? Math.min(live.length, notes[0].start) : notes[0].start - 0.5
+    const view = getView()
+    if (!view || !view.notes.length) return
+    const { notes, now } = view
     const lo = Math.min(...notes.map(n => n.midi)) - 2
     const hi = Math.max(...notes.map(n => n.midi)) + 2
     const lyricH = 18
@@ -430,7 +487,7 @@ function ScrollCanvas({ liveRef, active, placeholder }: {
     const t0 = now - PLAYHEAD * WINDOW_SEC - 0.5, t1 = now + (1 - PLAYHEAD) * WINDOW_SEC + 0.5
     for (const n of notes) {
       if (n.end < t0 || n.start > t1) continue
-      const sc = live.scores.get(n.idx)
+      const sc = view.scores.get(n.idx)
       const playing = now >= n.start && now < n.end
       g.fillStyle = sc !== undefined ? scoreColor(sc) + 'aa' : playing ? 'rgba(0,229,255,.7)' : 'rgba(0,229,255,.28)'
       g.beginPath(); g.roundRect(x(n.start) + 1, y(n.midi) - bh / 2, Math.max(3, x(n.end) - x(n.start) - 2), bh, 3); g.fill()
@@ -444,7 +501,7 @@ function ScrollCanvas({ liveRef, active, placeholder }: {
       notes.reduce((a, b) => Math.abs(b.start - t) < Math.abs(a.start - t) ? b : a)
     g.lineWidth = 2.5; g.lineCap = 'round'
     let prev: [number, number] | null = null
-    for (const f of live.frames) {
+    for (const f of view.frames) {
       if (f.t < t0 || f.t > now + 0.1) { if (f.t > now + 0.1) break; continue }
       if (f.midi === null) { prev = null; continue }
       const tg = near(f.t - 0.06).midi
@@ -461,7 +518,7 @@ function ScrollCanvas({ liveRef, active, placeholder }: {
     // playhead
     g.strokeStyle = 'rgba(255,255,255,.55)'; g.lineWidth = 1
     g.beginPath(); g.moveTo(w * PLAYHEAD, 0); g.lineTo(w * PLAYHEAD, h - lyricH); g.stroke()
-    if (active) drawMeter(g, w, live.meter)
+    if (view.meter) drawMeter(g, w, view.meter)
   }, 240)
   return <canvas ref={ref} className="vt-canvas" style={{ height: 240 }} />
 }
@@ -528,6 +585,155 @@ function SongResults({ result, section, prevScore, onPractice }: {
       )}
 
       <ul className="vt-tips">{tips.map((t, i) => <li key={i}>💡 {t}</li>)}</ul>
+    </div>
+  )
+}
+
+// ─── Recordings ──────────────────────────────────────────────────────────────
+
+export type PlayableTake = TakeRecording & {
+  label: string
+  saved?: boolean
+  meta?: { from: number; to: number; transpose: number; speed: number }
+}
+
+function useTakePlayer() {
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+  const guideRef = useRef<AudioContext | null>(null)
+  const [take, setTake] = useState<PlayableTake | null>(null)
+  const [playing, setPlaying] = useState(false)
+  const [withGuide, setWithGuide] = useState(false)
+  const [, force] = useState(0)
+
+  const stopGuide = () => { guideRef.current?.close().catch(() => {}); guideRef.current = null }
+  const startGuide = (t: PlayableTake, at: number) => {
+    stopGuide()
+    const ctx = new AudioContext()
+    guideRef.current = ctx
+    const tNow = at + t.offset
+    for (const n of t.notes) {
+      if (n.end <= tNow) continue
+      const s = Math.max(n.start, tNow)
+      scheduleTone(ctx, n.midi, ctx.currentTime + 0.03 + (s - tNow), Math.max(0.06, (n.end - s) * 0.92), 0.22)
+    }
+  }
+
+  const audio = () => {
+    if (!audioRef.current) {
+      const a = new Audio()
+      a.preload = 'auto'
+      a.addEventListener('ended', () => { setPlaying(false); stopGuide() })
+      a.addEventListener('pause', () => setPlaying(false))
+      a.addEventListener('play', () => setPlaying(true))
+      a.addEventListener('timeupdate', () => force(x => x + 1))
+      audioRef.current = a
+    }
+    return audioRef.current
+  }
+
+  const play = (t: PlayableTake) => {
+    if (!t.url) return
+    const a = audio()
+    if (take?.id !== t.id) { a.src = t.url; a.currentTime = 0; setTake(t) }
+    if (a.ended) a.currentTime = 0
+    a.play().catch(() => {})
+    if (withGuide) startGuide(t, a.currentTime)
+  }
+  const pause = () => { audioRef.current?.pause(); stopGuide() }
+  const close = () => { pause(); setTake(null) }
+  const seek = (sec: number) => {
+    const a = audioRef.current
+    if (!a || !take) return
+    a.currentTime = Math.max(0, sec)
+    if (!a.paused && withGuide) startGuide(take, a.currentTime)
+    force(x => x + 1)
+  }
+  const toggleGuide = () => {
+    const next = !withGuide
+    setWithGuide(next)
+    const a = audioRef.current
+    if (a && take && !a.paused) { if (next) startGuide(take, a.currentTime); else stopGuide() }
+  }
+  const position = () => audioRef.current?.currentTime ?? 0
+  const duration = () => take ? Math.max(0.1, take.length - take.offset) : 0
+
+  useEffect(() => () => { audioRef.current?.pause(); stopGuide() }, [])
+
+  return { take, playing, withGuide, play, pause, close, seek, toggleGuide, position, duration }
+}
+
+type Player = ReturnType<typeof useTakePlayer>
+
+const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`
+
+function PlayerBar({ player }: { player: Player }) {
+  const t = player.take!
+  const dur = player.duration()
+  const pos = Math.min(player.position(), dur)
+  return (
+    <div className="sp-player">
+      <button className="sp-play" onClick={() => player.playing ? player.pause() : player.play(t)}>
+        {player.playing ? '⏸' : '▶'}
+      </button>
+      <div className="sp-player-mid">
+        <div className="sp-player-title">
+          🎧 {t.label} ・ <b style={{ color: scoreColor(t.score) }}>{t.score}点</b>
+          <span className="sp-player-date">{new Date(t.date).toLocaleString([], { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+        </div>
+        <input type="range" className="sp-seek" min={0} max={dur} step={0.05} value={pos}
+          onChange={e => player.seek(Number(e.target.value))} />
+      </div>
+      <span className="sp-time">{fmt(pos)}/{fmt(dur)}</span>
+      <button className={`vt-chip ${player.withGuide ? 'selected' : ''}`} onClick={player.toggleGuide}>🎹 お手本を重ねる</button>
+      <button className="sp-icon" title="閉じる" onClick={player.close}>✕</button>
+    </div>
+  )
+}
+
+function TakeRow({ t, player, right }: { t: PlayableTake; player: Player; right: JSX.Element | null }) {
+  const active = player.take?.id === t.id
+  return (
+    <div className={`sp-take ${active ? 'active' : ''}`}>
+      <button className="sp-play small" disabled={!t.url}
+        onClick={() => active && player.playing ? player.pause() : player.play(t)}>
+        {active && player.playing ? '⏸' : '▶'}
+      </button>
+      <span className="sp-take-score" style={{ color: scoreColor(t.score) }}>{t.score}点</span>
+      <span className="sp-take-label">{t.label}</span>
+      <span className="sp-take-date">{new Date(t.date).toLocaleString([], { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+      {right}
+    </div>
+  )
+}
+
+function TakeList({ player, sessionTakes, savedTakes, onSave, onDelete }: {
+  player: Player; sessionTakes: PlayableTake[]; savedTakes: PlayableTake[]
+  onSave: (t: PlayableTake) => void; onDelete: (t: PlayableTake) => void
+}) {
+  const savedIds = new Set(savedTakes.map(t => t.id))
+  return (
+    <div className="vt-results">
+      {sessionTakes.length > 0 && (
+        <>
+          <div className="vt-sub-title">今回の録音（タップで聴き返し。音程グラフも一緒に流れます）</div>
+          {sessionTakes.map(t => (
+            <TakeRow key={t.id} t={t} player={player} right={
+              !t.url ? <span className="sp-take-date">録音なし</span>
+                : savedIds.has(t.id) ? <span className="sp-take-saved">✓ 保存済み</span>
+                : <button className="vt-chip" onClick={() => onSave(t)}>💾 保存</button>
+            } />
+          ))}
+        </>
+      )}
+      {savedTakes.length > 0 && (
+        <>
+          <div className="vt-sub-title">保存した録音（前の自分と聴き比べ）</div>
+          {savedTakes.map(t => (
+            <TakeRow key={t.id} t={t} player={player} right={<button className="sp-icon" title="削除" onClick={() => onDelete(t)}>🗑</button>} />
+          ))}
+        </>
+      )}
+      <div className="vt-legend">✱ 今回の録音は画面を離れると消えます。残したいものは「保存」してください（この端末に保存されます）。</div>
     </div>
   )
 }
